@@ -1,0 +1,1 @@
+# HOW: Tích hợp Webpack Module Federation, SSE/WebSocket client, Zustand store

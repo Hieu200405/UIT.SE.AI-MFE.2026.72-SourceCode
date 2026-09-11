@@ -1,0 +1,1 @@
+# DO: Các taskatomic (T001, T002...) từ setup đến tích hợp
