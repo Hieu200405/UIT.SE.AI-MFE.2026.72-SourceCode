@@ -1,8 +1,12 @@
 node_modules/
 dist/
-build/
+test-results/
+playwright-report/
 .env
-.env.*
-*.log
-.DS_Store
-.expo/
+*.db
+*.db-wal
+*.db-shm
+data/
+apps/mobile/node_modules/
+apps/mobile/dist/
+apps/mobile/.expo/

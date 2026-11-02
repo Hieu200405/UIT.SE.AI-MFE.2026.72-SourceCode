@@ -1,0 +1,5 @@
+/* Chỉ theme + utilities có prefix "chat"; KHÔNG import preflight (reset toàn cục thuộc về Host). */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(chat);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(chat);
+@source "./**/*.tsx";

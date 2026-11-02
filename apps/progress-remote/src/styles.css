@@ -1,0 +1,5 @@
+/* Chỉ theme + utilities có prefix "progress"; KHÔNG import preflight (reset toàn cục thuộc về Host). */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(progress);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(progress);
+@source "./**/*.tsx";

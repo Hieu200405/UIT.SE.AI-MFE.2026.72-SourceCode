@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "apps/*/src",
+    "packages/shared-types/src",
+    "packages/event-bus/src",
+    "packages/facade-client/src",
+    "packages/rules-xung-ho/src/index.ts",
+    "packages/rules-xung-ho/src/engine.ts",
+    "packages/rules-xung-ho/src/types.ts",
+    "packages/ai-service-facade/src/scripts.ts",
+    "packages/ai-service-facade/src/mock-llm.ts",
+    "packages/ai-service-facade/src/store.ts",
+    "packages/ai-service-facade/src/progress.ts",
+    "packages/ai-service-facade/src/llm.ts",
+    "packages/ai-service-facade/src/reply-parser.ts",
+    "packages/ai-service-facade/src/prompt.ts",
+    "packages/ai-service-facade/src/engine.ts",
+    "packages/chat-state/src",
+    "packages/chart-geometry/src"
+  ],
+  "exclude": [
+    "apps/mobile"
+  ]
+}

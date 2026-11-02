@@ -1,25 +1,19 @@
-# Constitution — VN Integration Platform
+# Constitution – UIT.SE.AI-MFE.2026.72
 
-## Nguyên tắc kiến trúc
-1. **Singleton React**: `react` và `react-dom` là singleton qua Module Federation; không remote nào tự bundle bản riêng.
-2. **Remote độc lập**: không import chéo giữa các remote; giao tiếp qua event bus / shared store do host cung cấp.
-3. **Cô lập style**: không CSS toàn cục; dùng Tailwind có scope hoặc CSS Modules.
-4. **Chịu lỗi**: mỗi remote được bọc Error Boundary; lỗi một remote không được làm sập host.
-5. **Một cổng AI**: mọi lời gọi LLM và Web Speech đi qua `packages/ai-facade`. UI không gọi trực tiếp.
-6. **Dữ liệu tách khỏi code**: tình huống, quy tắc xưng hô, ghi chú văn hóa nằm trong `packages/content`, có test đi kèm; không hard-code trong component.
+Nguyên tắc bất biến. Agent không được phá vỡ. Sửa Constitution cần cả 2 thành viên đồng ý.
 
-## Chất lượng
-7. TypeScript strict; không dùng `any` nếu không có comment giải thích.
-8. Mỗi task phải có kiểm chứng (test/lint/build) trước khi coi là xong.
-9. Bộ kịch bản kiểm thử xưng hô (tối thiểu 15 ca) phải chạy lại sau mỗi thay đổi prompt hoặc dữ liệu quy tắc.
-
-## Phạm vi và quy trình
-10. Chỉ làm tính năng thuộc spec đang thực hiện; ưu tiên Core, không tự thêm Should-have/Nice-to-have.
-11. Mỗi spec một branch; mỗi task một commit nhỏ (Conventional Commits). Không push thẳng `main`.
-12. Mọi thay đổi yêu cầu đi theo chuỗi: spec → plan → tasks → code → test → review. Thay đổi lớn cần con người duyệt.
-
-## Ràng buộc kỹ thuật
-- Không tự huấn luyện mô hình; dùng LLM API bên thứ ba hoặc mock.
-- Không tự xây STT/TTS; dùng Web Speech API (web) và API tương đương (mobile).
-
-**Version**: 1.0 | **Ratified**: 2026-09-28
+| # | Nguyên tắc | Nguồn |
+|---|-----------|-------|
+| 1 | React/react-dom là singleton qua Module Federation (`singleton: true`); đồng bộ version giữa các package.json; không Remote nào tự nâng version. | Charter – Standards |
+| 2 | Mỗi MFE cô lập style (CSS Modules/Tailwind scoping có prefix); cấm selector global (button, h1, *). | Charter – Standards; Architecture §7 |
+| 3 | Mỗi Remote được bọc Error Boundary độc lập tại Host; lỗi async xử lý bằng try/catch. | Charter – Standards; Architecture §6 |
+| 4 | Mọi lời gọi LLM/Web Speech đi qua AI Service Facade. | Charter – Standards |
+| 5 | Remote không import chéo; giao tiếp qua event bus (Pub/Sub) + shared-types. Event chỉ là tín hiệu, dữ liệu chuẩn lấy từ Facade. | Architecture §3 |
+| 6 | Quy tắc xưng hô/văn hóa là dữ liệu có cấu trúc, có trường nguồn; LLM chỉ diễn giải, không đặt quy tắc. | Setup §5; Charter – Risk |
+| 7 | Bộ 15 ca xưng hô (TC-XH-01…15) phải pass trước khi merge thay đổi prompt/quy tắc; chạy không cần LLM. | Charter – Control Procedures |
+| 8 | Không secret trong repo/prompt/bundle; không có UI cấu hình API key. | Charter – Exclusions |
+| 9 | Không làm ngoài Exclusions: gamification trang trí, CEFR, chấm phát âm, đăng nhập đầy đủ, leaderboard/badge. | Charter; Đặc tả §1.2 |
+| 10 | Agent chỉ sửa file trong phạm vi task; không tự thêm dependency; mơ hồ thì ghi clarify.md, không đoán. | Setup §5 |
+| 11 | UI động chỉ dựng từ registry đóng; type lạ/schema sai → fallback văn bản, không crash. | Architecture §5.3 |
+| 12 | Mọi sự kiện stream gắn requestId; bỏ sự kiện muộn của request đã hủy. | API Contract §4 |
+| 13 | Nội dung văn hóa chưa đối chiếu nguồn phải gắn nhãn "Sample/chưa kiểm chứng" và không vào bản demo. | Setup §7.2 |

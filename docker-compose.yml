@@ -1,0 +1,77 @@
+# Chạy cả hệ thống: docker compose up --build   (rồi mở http://localhost:3000)
+# Cấu hình: sao chép .env.example thành .env (KHÔNG commit). Không có LLM_API_KEY → Facade chạy chế độ mock.
+name: ai-mfe
+
+x-static-health: &static-health
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 5s
+
+services:
+  facade:
+    build: { context: ., target: facade }
+    ports: ["4000:4000"]
+    environment:
+      PORT: "4000"
+      FACADE_DB: /data/facade.db
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      FACADE_DEV: ${FACADE_DEV:-0}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MAX_RPM: ${LLM_MAX_RPM:-20}
+      LLM_DAILY_TOKEN_BUDGET: ${LLM_DAILY_TOKEN_BUDGET:-0}
+      LLM_FALLBACK: ${LLM_FALLBACK:-error}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-20000}
+    volumes: [facade-data:/data]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      <<: *static-health
+    restart: unless-stopped
+
+  chat-remote:
+    build: { context: ., target: chat-remote }
+    ports: ["3001:3001"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/remoteEntry.js').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      <<: *static-health
+    restart: unless-stopped
+
+  progress-remote:
+    build: { context: ., target: progress-remote }
+    ports: ["3002:3002"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/remoteEntry.js').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      <<: *static-health
+    restart: unless-stopped
+
+  personalization-remote:
+    build: { context: ., target: personalization-remote }
+    ports: ["3003:3003"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3003/remoteEntry.js').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      <<: *static-health
+    restart: unless-stopped
+
+  host:
+    build: { context: ., target: host }
+    ports: ["3000:3000"]
+    # URL mà TRÌNH DUYỆT dùng để tới từng thành phần (không phải tên service nội bộ của Docker).
+    environment:
+      FACADE_PUBLIC_URL: ${FACADE_PUBLIC_URL:-http://localhost:4000}
+      REMOTE_CHAT_URL: ${REMOTE_CHAT_URL:-http://localhost:3001/remoteEntry.js}
+      REMOTE_PROGRESS_URL: ${REMOTE_PROGRESS_URL:-http://localhost:3002/remoteEntry.js}
+      REMOTE_PERSONALIZATION_URL: ${REMOTE_PERSONALIZATION_URL:-http://localhost:3003/remoteEntry.js}
+    depends_on:
+      facade: { condition: service_healthy }
+      chat-remote: { condition: service_healthy }
+      progress-remote: { condition: service_healthy }
+      personalization-remote: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/config.json').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      <<: *static-health
+    restart: unless-stopped
+
+volumes:
+  facade-data:

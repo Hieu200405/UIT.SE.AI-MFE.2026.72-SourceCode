@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+.git
+test-results
+playwright-report
+data
+.env
+*.db
+*.db-wal
+*.db-shm
+*.zip
+docs/wireframes

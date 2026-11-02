@@ -1,34 +1,27 @@
-# AGENTS.md — Quy tắc chung cho mọi AI agent (OpenCode, Cline, Cursor, ...)
+# AGENTS.md
 
-## Dự án
-Nền tảng AI Agent hỗ trợ người nước ngoài sinh sống và hòa nhập tại Việt Nam.
-Kiến trúc: Micro Frontend (React + Module Federation) + AI Service Facade + Mobile companion (React Native).
-Tài liệu gốc: `docs/feature-spec.md` (tính năng), `specs/000-master/master-spec.md` (chia spec).
+## Bối cảnh
+Monorepo Micro Frontend React: Host + 3 Remote (Chat, Progress, Personalization) + AI Service Facade + Mobile (RN, Giai đoạn II).
+Sản phẩm: nền tảng AI Agent hỗ trợ người nước ngoài học giao tiếp thực tế tại Việt Nam.
+Wireframe tham chiếu: docs/wireframes/Vietnamese_for_Real_Life_Wireframes.pdf
 
-## Bắt buộc đọc trước khi làm
-1. `.specify/memory/constitution.md`
-2. `specs/<spec-hiện-tại>/spec.md`, `plan.md`, `tasks.md`
-Thiếu file nào → DỪNG và báo, không tự suy đoán.
+## Trước khi làm bất kỳ việc gì
+1. Đọc .specify/memory/constitution.md (nguyên tắc bất biến).
+2. Đọc specs/<module>/spec.md, plan.md, tasks.md của module đang làm.
+3. Chỉ làm đúng task được giao (mã Txxx). Không làm task khác.
 
-## Cấu trúc repo
-- `apps/host`, `apps/remote-chat`, `apps/remote-progress`, `apps/remote-personalization`, `apps/mobile`
-- `packages/ai-facade` (điểm truy cập LLM/Web Speech duy nhất), `packages/shared-types`, `packages/content` (tình huống, quy tắc xưng hô, ghi chú văn hóa)
-- `specs/NNN-*` (spec/plan/tasks theo từng tính năng), `docs/`
+## Được phép / Không được phép
+- Chỉ sửa file trong phạm vi "Files" của task.
+- KHÔNG thêm dependency mới khi chưa được duyệt.
+- KHÔNG gọi LLM/Web Speech trực tiếp; luôn qua packages/ai-service-facade.
+- KHÔNG import chéo giữa các Remote.
+- KHÔNG tự đặt quy tắc xưng hô/văn hóa; dùng packages/rules-xung-ho.
+- KHÔNG đọc/ghi .env hoặc secret.
+- KHÔNG render HTML tùy ý từ AI; chỉ dựng thẻ trong UI registry (address, cultural_note, reply_suggestion).
+- KHÔNG gán giới tính người học khi dữ liệu là "Prefer not to say"/chưa có.
 
-## Lệnh
-`pnpm install` | `pnpm lint` | `pnpm test` | `pnpm build` (từng package: `pnpm --filter <tên> <lệnh>`)
+## Khi mơ hồ
+Dừng lại, ghi câu hỏi vào specs/<module>/clarify.md, chờ người trả lời.
 
-## Cách làm việc
-- Mỗi lần chỉ làm ĐÚNG MỘT task trong `tasks.md` (ID dạng T001).
-- Chỉ sửa file thuộc phạm vi task. Cần sửa ngoài phạm vi → dừng và hỏi.
-- Không thêm dependency mới khi chưa được duyệt; nếu cần, đề xuất kèm lý do.
-- Không bịa API/thư viện. Không chắc → nói rõ "không chắc" và chỉ ra tài liệu cần kiểm tra.
-- Trước khi báo hoàn thành: chạy lint + test (thêm build nếu đụng cấu hình). Báo kết quả thật.
-- Commit theo Conventional Commits: `feat(chat): T012 render correction card`.
-
-## Ngoài phạm vi (không tự làm)
-Gamification/bảng xếp hạng, chấm điểm phát âm chính xác, chứng chỉ/CEFR, đăng nhập đầy đủ,
-nội dung học theo giáo trình, tính năng Should-have/Nice-to-have khi spec chưa yêu cầu.
-
-## Ngôn ngữ
-Code, identifier, commit: tiếng Anh. Tài liệu spec/plan/tasks: tiếng Việt (giữ thuật ngữ kỹ thuật tiếng Anh).
+## Định nghĩa "xong"
+Build + lint + test pass; acceptance criteria của task được kiểm chứng; PR ghi rõ mã task, file đã sửa, cách kiểm tra.

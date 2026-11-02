@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AddressRule (khớp src/types.ts)",
+  "type": "object",
+  "required": ["id", "when", "result", "reason", "source"],
+  "properties": {
+    "id": { "type": "string" },
+    "when": {
+      "type": "object",
+      "properties": {
+        "relationship": { "type": "array", "items": { "type": "string" } },
+        "counterpartGender": { "type": "array", "items": { "enum": ["male", "female", "unknown"] } },
+        "relativeAge": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["direct", "conditional", "neutral", "clarify"] },
+        "callTerm": { "type": ["string", "null"] },
+        "selfTerm": { "type": ["string", "null"], "description": "'@byLearnerGender' => anh/chị theo giới người học" },
+        "alternatives": { "type": "array", "items": { "type": "string" } },
+        "openingExample": { "type": "string" },
+        "clarifyQuestion": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "reason": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["ref", "status"],
+      "properties": {
+        "ref": { "type": "string" },
+        "verifiedBy": { "type": "string" },
+        "status": { "enum": ["unverified", "verified"] }
+      }
+    }
+  }
+}
