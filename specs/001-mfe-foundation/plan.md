@@ -1,0 +1,1 @@
+# WHAT + WHY: Yêu cầu UI chat, stream response, markdown/code block
