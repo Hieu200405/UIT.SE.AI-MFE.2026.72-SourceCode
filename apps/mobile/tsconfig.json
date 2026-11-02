@@ -1,0 +1,15 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true, "noEmit": true, "allowImportingTsExtensions": true, "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@app/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@app/facade-client": ["../../packages/facade-client/src/index.ts"],
+      "@app/chat-state": ["../../packages/chat-state/src/index.ts"],
+      "@app/chart-geometry": ["../../packages/chart-geometry/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../../packages/shared-types/src", "../../packages/facade-client/src", "../../packages/chat-state/src", "../../packages/chart-geometry/src"],
+  "exclude": ["node_modules", "dist"]
+}

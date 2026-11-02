@@ -1,0 +1,12 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.env
+*.db
+*.db-wal
+*.db-shm
+data/
+apps/mobile/node_modules/
+apps/mobile/dist/
+apps/mobile/.expo/

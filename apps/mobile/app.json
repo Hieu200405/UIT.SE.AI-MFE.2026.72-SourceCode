@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Vietnamese for real life",
+    "slug": "vietnamese-for-real-life",
+    "scheme": "vnreallife",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router"],
+    "extra": { "note": "Địa chỉ Facade lấy từ biến EXPO_PUBLIC_FACADE_URL (xem README)" }
+  }
+}

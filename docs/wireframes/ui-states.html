@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI states – Vietnamese for real life (wireframe addendum)</title>
+<style>
+:root{--bg:#f4f4f2;--card:#fff;--ink:#1c2b29;--mut:#5c6b68;--teal:#0f766e;--tealbg:#e3f3f0;--line:#dfe5e3;--warn:#fef7e0;--warnink:#7a3e0a;--err:#fdecec;--errink:#9b1c1c;--blue:#eaf2fd;--blueink:#1e3a8a}
+@media (prefers-color-scheme:dark){:root{--bg:#161b1a;--card:#1f2726;--ink:#e8efed;--mut:#9fb0ac;--teal:#5fd0c2;--tealbg:#1f3a36;--line:#34403e;--warn:#3a2f12;--warnink:#f3d28a;--err:#3b1f1f;--errink:#f5b5b5;--blue:#1c2a45;--blueink:#aac4f5}}
+*{box-sizing:border-box}body{margin:0;padding:24px;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 4px}p.s{color:var(--mut);margin:0 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.frame{background:var(--bg);border:1px dashed var(--line);border-radius:14px;padding:14px}
+.lbl{font-size:12px;color:var(--mut);margin-bottom:8px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.btn{display:inline-block;background:var(--teal);color:var(--card);border-radius:8px;padding:6px 14px;font-weight:600;font-size:14px}
+.btn.o{background:transparent;color:var(--teal);border:1px solid var(--teal)}
+.chip{display:inline-block;border:1px solid var(--teal);color:var(--teal);border-radius:999px;padding:3px 12px;margin:3px 4px 0 0;font-size:13px;font-weight:600}
+.sk{height:12px;border-radius:6px;background:var(--line);margin:8px 0}.sk.w{width:70%}.sk.n{width:40%}
+.msg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}.msg small{display:block;color:var(--mut)}
+.clar{background:var(--blue);color:var(--blueink);border-radius:12px;padding:12px;margin-bottom:8px}
+.err{background:var(--err);color:var(--errink);border-radius:12px;padding:12px;margin-bottom:8px}
+.fade{opacity:.6}.note{font-size:12px;color:var(--mut)}
+.mic{display:inline-block;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);text-align:center;line-height:30px;opacity:.45}
+</style></head><body>
+<h1>UI states – addendum to main wireframes</h1>
+<p class="s">Covers specs/003 FR-7, FR-10, FR-11, FR-12 and Progress/Profile loading &amp; empty states. Same visual language as the main wireframes.</p>
+
+<h2>Chat</h2>
+<div class="grid">
+<div class="frame"><div class="lbl">A. needs_clarification (TC-XH-15)</div>
+ <div class="msg">Hello, what would you like to ask?<small>Xin chào, bạn muốn hỏi gì?</small></div>
+ <div class="clar"><strong>Quick question</strong><br>How old is the person, compared to you, and where are you meeting?
+  <div><span class="chip">Younger than me</span><span class="chip">Similar age</span><span class="chip">Older than me</span><span class="chip">Much older</span></div>
+  <div class="note" style="color:inherit;margin-top:6px">Assumption for now: neutral wording (no pronouns).</div></div>
+ <div class="card">Type your reply in Vietnamese… &nbsp; <span class="mic" title="coming soon">🎤</span></div></div>
+
+<div class="frame"><div class="lbl">B. Stream failed / timeout (FR-11)</div>
+ <div class="msg fade">Cảm ơn cháu. Bác viết giấy nhận…<small>Incomplete reply</small></div>
+ <div class="err"><strong>Reply interrupted</strong><br>Connection lost before the reply finished. Your practice isn’t affected.
+  <div style="margin-top:8px"><span class="btn">Retry</span> <span class="note" style="color:inherit">or type a new message</span></div></div>
+ <div class="card">Type your reply in Vietnamese… &nbsp; <span class="mic" title="coming soon">🎤</span></div></div>
+
+<div class="frame"><div class="lbl">C. Stopped by user (cancelled)</div>
+ <div class="msg">Cảm ơn cháu. Bác viết giấy nhận<small>Stopped</small></div>
+ <div class="card">Type your reply in Vietnamese… &nbsp; <span class="mic" title="coming soon">🎤</span></div>
+ <div class="note">Mic button is display-only (feature flag <code>ui.micButton</code>); no action on tap.</div></div>
+<div class="frame"><div class="lbl">J. Mark as done (learner self-assessment, FR-14)</div>
+ <div class="card"><strong>Renting a place</strong><div class="note">Goals (guide only)</div>
+  <div>☐ Ask the electricity price</div><div>☐ Ask about the deposit</div><div>☐ Ask for a receipt</div>
+  <div style="margin-top:8px"><span class="btn o">Mark as done</span></div></div>
+ <div class="card fade"><span class="btn o">Mark as done</span> <span class="note">Available after your first completed turn.</span></div></div>
+</div>
+
+<h2>Practice</h2>
+<div class="grid">
+<div class="frame"><div class="lbl">D. Loading</div>
+ <div class="card"><div class="sk n"></div><div class="sk"></div><div class="sk w"></div></div>
+ <div class="card"><div class="sk n"></div><div class="sk"></div><div class="sk w"></div></div></div>
+<div class="frame"><div class="lbl">E. Empty (filter has no result)</div>
+ <div class="card" style="text-align:center"><strong>No scenarios here yet</strong><br><span class="note">Try another group.</span><div style="margin-top:8px"><span class="btn o">Clear filter</span></div></div></div>
+<div class="frame"><div class="lbl">F. Couldn’t load scenarios</div>
+ <div class="card" style="text-align:center"><strong>Scenarios are temporarily unavailable</strong><br><span class="note">Your progress and profile are not affected.</span><div style="margin-top:8px"><span class="btn">Retry</span></div></div>
+ <div class="note">Badges (New / In progress / Done) fall back to hidden if progress data fails.</div></div>
+</div>
+
+<h2>Progress &amp; Profile</h2>
+<div class="grid">
+<div class="frame"><div class="lbl">G. Progress loading</div>
+ <div class="card"><strong>Scenario map</strong><div class="sk"></div><div class="sk w"></div></div>
+ <div class="card"><strong>Address-term mistakes</strong><div class="sk" style="height:80px"></div></div></div>
+<div class="frame"><div class="lbl">H. Progress empty (no sessions yet)</div>
+ <div class="card" style="text-align:center"><strong>No practice yet</strong><br><span class="note">Finish one conversation to see your map and trends.</span><div style="margin-top:8px"><span class="btn">Start practicing</span></div></div></div>
+<div class="frame"><div class="lbl">I. Profile saving / saved / error</div>
+ <div class="card"><span class="btn">Saving…</span> &nbsp; <span class="note">Used to suggest scenarios and address terms.</span></div>
+ <div class="card"><span class="chip">Saved</span></div>
+ <div class="err">Couldn’t save your profile. <span class="btn" style="margin-left:6px">Try again</span></div></div>
+</div>
+</body></html>

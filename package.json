@@ -1,0 +1,53 @@
+{
+  "name": "ai-mfe-project",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:xungho": "node --experimental-strip-types --test packages/rules-xung-ho/test/xungho.test.ts",
+    "test:contract": "node --experimental-strip-types --test packages/shared-types/test/contract.test.ts",
+    "test:scenarios": "node --experimental-strip-types --test packages/ai-service-facade/test/scenarios.test.ts",
+    "poc:build": "node scripts/poc-build.cjs",
+    "poc:serve": "node scripts/poc-serve.cjs host=3000 chat-remote=3001 progress-remote=3002 personalization-remote=3003",
+    "test": "npm run test:xungho && npm run test:contract && npm run test:scenarios && npm run test:facade && npm run test:llm && npm run test:eventbus && npm run test:css && npm run test:chatstate && npm run test:chart && npm run test:hostconfig && npm run test:genconfig && npm run test:docker && npm run test:client",
+    "test:eventbus": "node --experimental-strip-types --test packages/event-bus/test/bus.test.ts",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "test:css": "node --test tests/css-isolation.test.mjs",
+    "test:e2e": "playwright test",
+    "facade": "node --experimental-strip-types --no-warnings --env-file-if-exists=.env packages/ai-service-facade/src/main.ts",
+    "test:facade": "node --experimental-strip-types --test packages/ai-service-facade/test/facade.test.ts",
+    "test:chatstate": "node --experimental-strip-types --no-warnings --test packages/chat-state/test/chat-state.test.ts",
+    "dev": "node scripts/dev.cjs",
+    "test:chart": "node --experimental-strip-types --no-warnings --test packages/chart-geometry/test/chart-geometry.test.ts",
+    "test:llm": "node --experimental-strip-types --no-warnings packages/ai-service-facade/test/llm.test.ts",
+    "test:hostconfig": "node --experimental-strip-types --no-warnings --test apps/host/test/appConfig.test.ts",
+    "test:genconfig": "node --test tests/gen-config.test.mjs",
+    "test:docker": "node --test tests/docker-consistency.test.mjs",
+    "test:images": "node --test tests/image-layout.test.mjs",
+    "test:client": "node --experimental-strip-types --no-warnings --test packages/facade-client/test/utf8.test.ts",
+    "mobile:install": "npm --prefix apps/mobile install",
+    "test:mobile": "npm --prefix apps/mobile test",
+    "typecheck:mobile": "npm --prefix apps/mobile run typecheck",
+    "bundle:mobile": "npm --prefix apps/mobile run bundle"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "webpack": "5.111.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "css-loader": "7.1.5",
+    "postcss": "8.5.29",
+    "postcss-loader": "8.2.1",
+    "style-loader": "4.0.0",
+    "tailwindcss": "4.3.3",
+    "ts-loader": "9.6.2",
+    "typescript": "5.9.3"
+  },
+  "workspaces": [
+    "packages/*"
+  ]
+}
