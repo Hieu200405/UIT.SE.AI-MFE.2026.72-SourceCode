@@ -75,7 +75,7 @@ test('pickCulturalNote: chỉ chọn từ danh sách có kiểm soát, theo từ
 
 // ------------------------------------------------------------------ LLM giả (chuẩn OpenAI)
 type Mode = 'ok' | '429' | '401' | '500' | 'hang' | 'plain' | 'garbled';
-const fake = { mode: 'ok' as Mode, reply: FULL, requests: [] as Array<{ auth: string; body: any }>, closed: 0 };
+const fake = { mode: 'ok' as Mode, reply: FULL, chunkSize: 7, requests: [] as Array<{ auth: string; body: any }>, closed: 0 };
 const fakeServer = http.createServer(async (req, res) => {
   let raw = ''; for await (const c of req) raw += c;
   fake.requests.push({ auth: String(req.headers.authorization), body: JSON.parse(raw) });
@@ -84,7 +84,7 @@ const fakeServer = http.createServer(async (req, res) => {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   if (fake.mode === 'hang') { res.write('data: {"choices":[{"delta":{"content":"<vi>Để bác"}}]}\n\n'); return; }
   const text = fake.mode === 'plain' ? 'Dạ, bác nghe đây.' : fake.reply;
-  for (let i = 0; i < text.length; i += 7) { res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text.slice(i, i + 7) } }] })}\n\n`); await new Promise((r) => setTimeout(r, 2)); }
+  for (let i = 0; i < text.length; i += fake.chunkSize) { res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text.slice(i, i + fake.chunkSize) } }] })}\n\n`); await new Promise((r) => setTimeout(r, 2)); }
   if (fake.mode === 'garbled') res.write('data: {không phải json\n\n');
   res.write('data: [DONE]\n\n'); res.end();
 });
@@ -92,7 +92,7 @@ await new Promise<void>((r) => fakeServer.listen(0, r));
 const fakeBase = `http://localhost:${(fakeServer.address() as AddressInfo).port}/v1`;
 const cleanup: Array<() => void> = [() => { fakeServer.closeAllConnections?.(); fakeServer.close(); }];
 after(() => cleanup.forEach((f) => f()));
-const reset = (mode: Mode = 'ok') => { fake.mode = mode; fake.reply = FULL; fake.requests.length = 0; fake.closed = 0; };
+const reset = (mode: Mode = 'ok') => { fake.mode = mode; fake.reply = FULL; fake.chunkSize = 7; fake.requests.length = 0; fake.closed = 0; };
 
 let n = 0;
 async function start(over: Partial<Parameters<typeof createFacade>[0]> = {}, llmOver: object = {}) {
@@ -226,4 +226,116 @@ test('SqliteStore: hồ sơ, tiến độ, đánh dấu Done và lịch sử h�
     assert.equal(fake.requests[0].body.messages.at(-2).content, 'Điện ba nghìn rưỡi một số.');
     await stop(s);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// T210: generated UI is provider output, never a scenario template.
+const generated = (title = 'Choose a dish') => ({ title, description: 'What would you like to practice ordering?', submitLabel: 'Continue',
+  fields: [{ id: 'dish', label: 'Dish', kind: 'choice', required: true, options: ['Phở', 'Bún'] }] });
+const uiReply = (data: unknown) => `<vi>Bạn muốn chọn món nào?</vi><en>Which dish would you like?</en><ui>${JSON.stringify(data)}</ui>`;
+const formFrom = (events: StreamEvent[]) => {
+  const e = events.find((x) => x.type === 'ui_card' && x.card.type === 'scenario_form');
+  assert.ok(e && e.type === 'ui_card' && e.card.type === 'scenario_form');
+  return e.card.data;
+};
+
+test('UI parser handles every chunk boundary without mixing JSON into speech; incomplete block is detectable', () => {
+  const raw = uiReply(generated());
+  for (let size = 1; size <= raw.length; size++) {
+    const p = new ReplyParser(); const pieces: ReturnType<typeof p.push> = [];
+    for (let i = 0; i < raw.length; i += size) pieces.push(...p.push(raw.slice(i, i + size)));
+    pieces.push(...p.end());
+    assert.deepEqual(JSON.parse(pieces.filter((x) => x.section === 'ui').map((x) => x.text).join('')), generated());
+    assert.equal(pieces.filter((x) => x.section === 'vi').map((x) => x.text).join(''), 'Bạn muốn chọn món nào?');
+    assert.equal(p.uiStarted, 1); assert.equal(p.uiCompleted, 1);
+  }
+  const p = new ReplyParser(); p.push(raw.slice(0, -5)); p.end(); assert.equal(p.uiCompleted, 0);
+});
+
+test('LLM decides UI/no UI; selections and original question return to model; next UI is different', async () => {
+  reset(); const { client } = await start();
+  fake.reply = uiReply(generated('Choose your lunch'));
+  const first = await run(client, { ...msg('I want to order lunch'), interactive: true });
+  const form = formFrom(first.events);
+  assert.equal(form.title, 'Choose your lunch');
+  assert.ok(!JSON.stringify(first.events.filter((e) => e.type === 'text_delta')).includes('submitLabel'));
+  assert.ok(fake.requests[0].body.messages[0].content.includes('Do not follow a fixed form sequence'));
+  assert.equal(fake.requests[0].body.max_tokens, 1400);
+  fake.reply = uiReply({ title: 'Choose spice level', description: 'How spicy would you like your phở?', submitLabel: 'Use this preference',
+    fields: [{ id: 'spice', label: 'Spice level', kind: 'select', required: true, options: ['Not spicy', 'A little spicy'] }] });
+  const second = await run(client, { ...msg('Phở'), interactive: true, interaction: { formId: form.formId, values: { dish: 'Phở' } } });
+  const next = formFrom(second.events);
+  assert.equal(next.title, 'Choose spice level'); assert.notEqual(next.formId, form.formId);
+  const userMessage = fake.requests.at(-1)!.body.messages.at(-1);
+  assert.equal(userMessage.role, 'user');
+  assert.deepEqual(JSON.parse(userMessage.content).answers, [{ field: 'dish', question: 'Dish', value: 'Phở' }]);
+  assert.equal(JSON.parse(userMessage.content).question, 'Choose your lunch');
+  assert.ok(!fake.requests.at(-1)!.body.messages[0].content.includes('Choose your lunch'));
+  assert.equal((await client.getProgress()).totals.turns, 1, 'selection is not graded as a Vietnamese practice turn');
+  fake.reply = '<vi>Được rồi.</vi><en>All right.</en><ui>null</ui>';
+  const third = await run(client, { ...msg('Not spicy'), interactive: true, interaction: { formId: next.formId, values: { spice: 'Not spicy' } } });
+  assert.equal(third.outcome, 'done');
+  assert.ok(!third.events.some((e) => e.type === 'ui_card' && e.card.type === 'scenario_form'));
+  assert.ok(fake.requests.at(-1)!.body.messages.some((m: any) => m.role === 'user' && m.content.includes('Phở')));
+  await assert.rejects(run(client, { ...msg('Replay'), interactive: true, interaction: { formId: next.formId, values: { spice: 'Not spicy' } } }), (e: any) => e.status === 409);
+});
+
+test('generated UI bound to user and scenario; reject invalid/missing/unknown values before calling provider', async () => {
+  reset(); const { client, base } = await start(); fake.reply = uiReply(generated());
+  const form = formFrom((await run(client, { ...msg('Help me choose'), interactive: true })).events);
+  const submit = async (values: Record<string, string>, scenarioId = 'renting', id = client.anonymousId) => fetch(base + '/chat/stream', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-anonymous-id': id },
+    body: JSON.stringify({ ...msg('Choose'), scenarioId, interactive: true, interaction: { formId: form.formId, values } }),
+  });
+  const count = fake.requests.length;
+  for (const values of [{}, { dish: 'invalid' }, { dish: 'Phở', extra: 'x' }, { dish: 'x'.repeat(301) }]) assert.equal((await submit(values)).status, 400);
+  assert.equal((await submit({ dish: 'Phở' }, 'market')).status, 409);
+  assert.equal((await submit({ dish: 'Phở' }, 'renting', 'another-anonymous-user')).status, 409);
+  assert.equal(fake.requests.length, count);
+  fake.reply = '<vi>Cảm ơn.</vi><en>Thank you.</en>';
+  await run(client, { ...msg('I will type instead'), interactive: true });
+  assert.equal((await submit({ dish: 'Phở' })).status, 409);
+});
+
+test('malformed, unsupported, oversized, duplicate and truncated UI fall back to text without leaking JSON', async () => {
+  reset(); const { client } = await start();
+  const baseText = '<vi>Chọn món nhé.</vi><en>Choose a dish.</en>';
+  const invalid = [
+    '<ui>{bad json}</ui>',
+    `<ui>${JSON.stringify({ ...generated(), actionUrl: 'https://example.invalid' })}</ui>`,
+    `<ui>${JSON.stringify({ ...generated(), fields: [{ id: 'run', label: 'Run', kind: 'html', required: true }] })}</ui>`,
+    `<ui>${JSON.stringify(generated())}`,
+    `<ui>${JSON.stringify(generated())}</ui><ui>null</ui>`,
+    `<ui>${JSON.stringify({ ...generated(), description: 'x'.repeat(12_001) })}</ui>`,
+  ];
+  for (const suffix of invalid) {
+    fake.chunkSize = 512;
+    fake.reply = baseText + suffix;
+    const r = await run(client, { ...msg('Ask me'), interactive: true });
+    assert.equal(r.outcome, 'done');
+    assert.ok(!r.events.some((e) => e.type === 'ui_card' && e.card.type === 'scenario_form'));
+    assert.ok(r.events.some((e) => e.type === 'text_delta' && e.partId === 'ui-fallback'));
+    assert.ok(!JSON.stringify(r.events).includes('actionUrl'));
+    assert.ok(!JSON.stringify(r.events).includes('submitLabel'));
+  }
+});
+
+test('legacy client ignores LLM UI; web open can generate UI without counting a turn', async () => {
+  reset(); const { client } = await start(); fake.reply = uiReply(generated());
+  const legacy = await run(client, msg('Hi'));
+  assert.ok(!legacy.events.some((e) => e.type === 'ui_card' && e.card.type === 'scenario_form'));
+  const open = await run(client, { requestId: 'generated-open', scenarioId: 'renting', kind: 'open', interactive: true });
+  formFrom(open.events);
+  assert.equal((await client.getProgress()).totals.turns, 1);
+  assert.ok(!open.events.some((e) => e.type === 'user_translation'));
+});
+
+test('failed generation preserves submitted form for retry; completed submission consumes it', async () => {
+  reset(); const { client } = await start(); fake.reply = uiReply(generated());
+  const form = formFrom((await run(client, { ...msg('Choose'), interactive: true })).events);
+  const action = { ...msg('Phở'), interactive: true, interaction: { formId: form.formId, values: { dish: 'Phở' } } };
+  fake.mode = '429';
+  assert.equal((await run(client, action)).outcome, 'error');
+  fake.mode = 'ok'; fake.reply = '<vi>Được.</vi><en>Okay.</en>';
+  assert.equal((await run(client, { ...action, requestId: 'retry-action' })).outcome, 'done');
+  await assert.rejects(run(client, { ...action, requestId: 'replay-action' }), (e: any) => e.status === 409);
 });

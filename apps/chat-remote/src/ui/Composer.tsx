@@ -7,10 +7,10 @@ export function Composer({ draft, setDraft, busy, flags, onSend, onHint }: {
 }) {
   const input = useRef<HTMLInputElement>(null);
   return (
-    <div className="chat:flex chat:flex-wrap chat:items-center chat:gap-2">
-      <input ref={input} aria-label="Your reply" value={draft} placeholder="Type your reply in Vietnamese…" disabled={busy}
+    <div className="chat:composer-shell chat:flex chat:flex-wrap chat:items-center chat:gap-2">
+      <input ref={input} aria-label="Your reply" value={draft} placeholder="Say something, or ask for help…" disabled={busy}
         onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-        className="chat:min-w-28 chat:flex-1 chat:rounded-full chat:border chat:border-stone-300 chat:bg-white chat:px-4 chat:py-2 chat:disabled:bg-stone-100" />
+        className="chat:composer-input chat:min-w-28 chat:flex-1 chat:rounded-full chat:border chat:border-stone-300 chat:bg-white chat:px-4 chat:py-2 chat:disabled:bg-stone-100" />
       {flags.micButton && (
         // Chỉ hiển thị (clarify #7): không có chức năng, không gọi Web Speech.
         <button type="button" disabled aria-label="Voice input – coming soon" title="Voice input – coming soon" data-testid="mic-button"

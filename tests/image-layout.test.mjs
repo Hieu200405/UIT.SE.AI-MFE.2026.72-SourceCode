@@ -9,12 +9,30 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const procs = [], dirs = [];
-after(() => { procs.forEach((p) => p.kill()); dirs.forEach((d) => rmSync(d, { recursive: true, force: true })); });
+after(async () => {
+  procs.forEach((p) => { try { p.kill(); } catch {} });
+  await new Promise((r) => setTimeout(r, 300));
+  dirs.forEach((d) => {
+    try { rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {}
+  });
+});
 const freePort = () => new Promise((res) => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => res(p)); }); });
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'img-')); dirs.push(d); return d; };
 const waitUp = async (url, init) => { for (let i = 0; i < 60; i++) { try { const r = await fetch(url, init); if (r.status < 500) return; } catch {} await new Promise((r) => setTimeout(r, 100)); } throw new Error('không khởi động: ' + url); };
 const start = (cmd, args, opts) => { const p = spawn(cmd, args, { stdio: 'ignore', ...opts }); procs.push(p); return p; };
 const needDist = (app) => assert.ok(existsSync(`apps/${app}/dist/index.html`), `thiếu apps/${app}/dist – chạy npm run poc:build trước`);
+const runShell = (cmdStr, opts = {}) => {
+  if (process.platform === 'win32') {
+    return spawn('cmd.exe', ['/d', '/s', '/c', cmdStr], { stdio: 'ignore', ...opts });
+  }
+  return spawn('sh', ['-c', cmdStr], { stdio: 'ignore', ...opts });
+};
+const runShellSync = (cmdStr, opts = {}) => {
+  if (process.platform === 'win32') {
+    return spawnSync('cmd.exe', ['/d', '/s', '/c', cmdStr], opts);
+  }
+  return spawnSync('sh', ['-c', cmdStr], opts);
+};
 
 test('image host: scripts + dist, gen-config sinh config.json từ biến môi trường rồi phục vụ (cả SPA fallback)', async () => {
   needDist('host'); const d = tmp(), port = await freePort();
@@ -22,7 +40,8 @@ test('image host: scripts + dist, gen-config sinh config.json từ biến môi t
   for (const f of ['poc-serve.cjs', 'gen-config.cjs']) cpSync(`scripts/${f}`, join(d, 'scripts', f));
   cpSync('apps/host/dist', join(d, 'apps/host/dist'), { recursive: true });
   rmSync(join(d, 'apps/host/dist/config.json'));                                  // image thật không chứa config; nó được sinh lúc khởi động
-  start('sh', ['-c', `node scripts/gen-config.cjs && node scripts/poc-serve.cjs host=${port}`], { cwd: d, env: { PATH: process.env.PATH, FACADE_PUBLIC_URL: 'https://api.demo.dev', REMOTE_CHAT_URL: 'https://chat.demo.dev/remoteEntry.js' } });
+  const p = runShell(`node scripts/gen-config.cjs && node scripts/poc-serve.cjs host=${port}`, { cwd: d, env: { PATH: process.env.PATH, FACADE_PUBLIC_URL: 'https://api.demo.dev', REMOTE_CHAT_URL: 'https://chat.demo.dev/remoteEntry.js' } });
+  procs.push(p);
   await waitUp(`http://localhost:${port}/config.json`);
   const cfg = await (await fetch(`http://localhost:${port}/config.json`)).json();
   assert.equal(cfg.facadeUrl, 'https://api.demo.dev'); assert.equal(cfg.remotes.chat, 'https://chat.demo.dev/remoteEntry.js'); assert.equal(cfg.remotes.progress, 'http://localhost:3002/remoteEntry.js');
@@ -33,7 +52,7 @@ test('image host: scripts + dist, gen-config sinh config.json từ biến môi t
 test('image host: biến URL sai → tiến trình thoát mã 1, KHÔNG phục vụ với cấu hình sai', () => {
   const d = tmp(); mkdirSync(join(d, 'scripts')); mkdirSync(join(d, 'apps/host/dist'), { recursive: true });
   for (const f of ['poc-serve.cjs', 'gen-config.cjs']) cpSync(`scripts/${f}`, join(d, 'scripts', f));
-  const r = spawnSync('sh', ['-c', 'node scripts/gen-config.cjs && node scripts/poc-serve.cjs host=1'], { cwd: d, env: { PATH: process.env.PATH, REMOTE_CHAT_URL: 'javascript:alert(1)' }, encoding: 'utf8', timeout: 5000 });
+  const r = runShellSync('node scripts/gen-config.cjs && node scripts/poc-serve.cjs host=1', { cwd: d, env: { PATH: process.env.PATH, REMOTE_CHAT_URL: 'javascript:alert(1)' }, encoding: 'utf8', timeout: 5000 });
   assert.equal(r.status, 1); assert.ok(r.stderr.includes('REMOTE_CHAT_URL'));
 });
 for (const app of ['chat-remote', 'progress-remote', 'personalization-remote']) {
@@ -50,7 +69,9 @@ for (const app of ['chat-remote', 'progress-remote', 'personalization-remote']) 
 test('image facade: chỉ thư mục packages + symlink @app/shared-types (KHÔNG có node_modules gốc) vẫn chạy; dữ liệu lưu bền ở /data', async () => {
   const d = tmp(), port = await freePort();
   cpSync('packages', join(d, 'packages'), { recursive: true, filter: (s) => !s.includes('node_modules') });
-  mkdirSync(join(d, 'node_modules/@app'), { recursive: true }); symlinkSync('../../packages/shared-types', join(d, 'node_modules/@app/shared-types'));
+  mkdirSync(join(d, 'node_modules/@app'), { recursive: true });
+  const target = process.platform === 'win32' ? join(d, 'packages/shared-types') : '../../packages/shared-types';
+  symlinkSync(target, join(d, 'node_modules/@app/shared-types'), process.platform === 'win32' ? 'junction' : 'dir');
   mkdirSync(join(d, 'data'));
   const env = { PATH: process.env.PATH, PORT: String(port), FACADE_DB: join(d, 'data/facade.db'), CORS_ORIGIN: 'https://app.demo.dev' };
   start('node', ['--experimental-strip-types', '--no-warnings', 'packages/ai-service-facade/src/main.ts'], { cwd: d, env });

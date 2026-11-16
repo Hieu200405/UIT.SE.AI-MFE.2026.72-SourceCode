@@ -1,0 +1,424 @@
+{
+ "_note": "Dữ liệu quy tắc xưng hô – TẤT CẢ đang 'unverified'. Cần người am hiểu tiếng Việt đối chiếu trước demo (Constitution #6, #13). Rule đầu tiên khớp thắng; không khớp => clarify.",
+ "rules": [
+  {
+   "id": "R-LECT-M",
+   "when": {
+    "relationship": [
+     "lecturer"
+    ],
+    "counterpartGender": [
+     "male"
+    ]
+   },
+   "result": {
+    "mode": "direct",
+    "callTerm": "thầy",
+    "selfTerm": "em",
+    "openingExample": "Thưa thầy, em muốn hỏi…"
+   },
+   "reason": "A teacher is a clear role relationship: call him thầy and yourself em.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-06",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-LECT-F",
+   "when": {
+    "relationship": [
+     "lecturer"
+    ],
+    "counterpartGender": [
+     "female"
+    ]
+   },
+   "result": {
+    "mode": "direct",
+    "callTerm": "cô",
+    "selfTerm": "em",
+    "openingExample": "Thưa cô, em muốn hỏi…"
+   },
+   "reason": "A teacher is a clear role relationship: call her cô and yourself em.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-07",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-LECT-UNK",
+   "when": {
+    "relationship": [
+     "lecturer"
+    ],
+    "counterpartGender": [
+     "unknown"
+    ]
+   },
+   "result": {
+    "mode": "clarify",
+    "clarifyQuestion": "Giảng viên là nam hay nữ?"
+   },
+   "reason": "Thầy/cô depends on the teacher's gender.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô (suy ra từ TC-XH-06/07)",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-DOCTOR",
+   "when": {
+    "relationship": [
+     "doctor"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "bác sĩ",
+    "selfTerm": "tôi",
+    "alternatives": [
+     "em (tùy tuổi)"
+    ],
+    "openingExample": "Bác sĩ cho tôi hỏi…"
+   },
+   "reason": "Use the professional title; tôi is a safe self-term.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-12",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-ELDER-NEIGHBOR-M",
+   "when": {
+    "relationship": [
+     "neighbor",
+     "landlord"
+    ],
+    "counterpartGender": [
+     "male"
+    ],
+    "relativeAge": [
+     "much_older",
+     "older_than_learner_parents"
+    ]
+   },
+   "result": {
+    "mode": "direct",
+    "callTerm": "bác",
+    "selfTerm": "cháu",
+    "openingExample": "Cháu chào bác ạ."
+   },
+   "reason": "He is much older — use bác and refer to yourself as cháu.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-10 và wireframe Renting a place",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-FRIEND-MOTHER",
+   "when": {
+    "relationship": [
+     "friend_mother"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "cô",
+    "selfTerm": "cháu",
+    "alternatives": [
+     "bác"
+    ]
+   },
+   "reason": "She is one generation older; cô or bác depending on age and what the family prefers.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-08",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-FRIEND-YOUNGER-SIB",
+   "when": {
+    "relationship": [
+     "friend_younger_brother"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "em",
+    "selfTerm": "@byLearnerGender"
+   },
+   "reason": "He is much younger: call him em. Your own self-term depends on your gender.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-09",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-CLINIC-PHONE",
+   "when": {
+    "relationship": [
+     "clinic_receptionist"
+    ],
+    "counterpartGender": [
+     "unknown"
+    ],
+    "relativeAge": [
+     "unknown"
+    ]
+   },
+   "result": {
+    "mode": "neutral",
+    "callTerm": null,
+    "selfTerm": "tôi",
+    "alternatives": [
+     "anh/chị (có điều kiện)"
+    ],
+    "openingExample": "Xin chào, tôi muốn đặt lịch khám…"
+   },
+   "reason": "Age and gender are unknown, so avoid guessing a pronoun.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-11",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-CUSTOMER-UNK",
+   "when": {
+    "relationship": [
+     "customer"
+    ],
+    "counterpartGender": [
+     "unknown"
+    ],
+    "relativeAge": [
+     "unknown"
+    ]
+   },
+   "result": {
+    "mode": "neutral",
+    "callTerm": null,
+    "alternatives": [
+     "anh/chị (khi phù hợp)"
+    ],
+    "openingExample": "Xin chào, tôi có thể hỗ trợ gì cho bạn?"
+   },
+   "reason": "Age and gender are unknown, so use a polite sentence without a pronoun.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-14",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-PEER",
+   "when": {
+    "relationship": [
+     "classmate"
+    ],
+    "relativeAge": [
+     "similar"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "bạn",
+    "selfTerm": "mình",
+    "alternatives": [
+     "tớ – cậu"
+    ]
+   },
+   "reason": "Same-age peers: bạn/mình is polite; tớ/cậu if the setting is close.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-05",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "R-COLLEAGUE",
+   "when": {
+    "relationship": [
+     "colleague_not_close"
+    ],
+    "relativeAge": [
+     "slightly_older",
+     "older"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "anh/chị",
+    "selfTerm": "em",
+    "alternatives": [
+     "tên/chức danh",
+     "hỏi cách xưng hô mong muốn"
+    ]
+   },
+   "reason": "A slightly older colleague you don't know well: polite anh/chị, or ask how they prefer to be addressed.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-13",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "G-FEMALE-MUCH-OLDER",
+   "when": {
+    "counterpartGender": [
+     "female"
+    ],
+    "relativeAge": [
+     "much_older"
+    ]
+   },
+   "result": {
+    "mode": "direct",
+    "callTerm": "cô",
+    "selfTerm": "cháu",
+    "openingExample": "Cô ơi, cho cháu hỏi…"
+   },
+   "reason": "She is much older — use cô and refer to yourself as cháu.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-01",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "G-MALE-MUCH-OLDER",
+   "when": {
+    "counterpartGender": [
+     "male"
+    ],
+    "relativeAge": [
+     "much_older"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "chú",
+    "selfTerm": "cháu",
+    "alternatives": [
+     "bác"
+    ],
+    "openingExample": "Chú ơi, cho cháu hỏi…"
+   },
+   "reason": "He is much older — chú, or bác if he is a lot older.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-02",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "G-FEMALE-SIMILAR-OLDER",
+   "when": {
+    "counterpartGender": [
+     "female"
+    ],
+    "relativeAge": [
+     "similar_or_slightly_older",
+     "slightly_older"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "chị",
+    "selfTerm": "em",
+    "alternatives": [
+     "bạn/mình",
+     "không dùng đại từ"
+    ]
+   },
+   "reason": "If she is a bit older use chị/em; if the same age, bạn/mình or no pronoun.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-03",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "G-YOUNGER",
+   "when": {
+    "counterpartGender": [
+     "male",
+     "female"
+    ],
+    "relativeAge": [
+     "younger",
+     "much_younger"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "em",
+    "selfTerm": "@byLearnerGender"
+   },
+   "reason": "The other person is younger: call them em. Your self-term depends on your gender.",
+   "source": {
+    "ref": "Bộ 15 ca xưng hô TC-XH-04",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "G-SIMILAR",
+   "when": {
+    "relativeAge": [
+     "similar"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "bạn",
+    "selfTerm": "mình",
+    "alternatives": [
+     "không dùng đại từ",
+     "anh/chị (lịch sự)"
+    ]
+   },
+   "reason": "About the same age: bạn/mình or no pronoun; anh/chị if you want to be more formal.",
+   "source": {
+    "ref": "(suy ra từ TC-XH-03, 05; chưa có ca riêng)",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "G-MALE-OLDER",
+   "when": {
+    "counterpartGender": [
+     "male"
+    ],
+    "relativeAge": [
+     "older",
+     "slightly_older",
+     "similar_or_slightly_older"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "anh",
+    "selfTerm": "em"
+   },
+   "reason": "He is older than you: anh/em.",
+   "source": {
+    "ref": "(suy ra, chưa có ca kiểm thử)",
+    "status": "unverified"
+   }
+  },
+  {
+   "id": "G-FEMALE-OLDER",
+   "when": {
+    "counterpartGender": [
+     "female"
+    ],
+    "relativeAge": [
+     "older"
+    ]
+   },
+   "result": {
+    "mode": "conditional",
+    "callTerm": "chị",
+    "selfTerm": "em"
+   },
+   "reason": "She is older than you: chị/em.",
+   "source": {
+    "ref": "(suy ra, chưa có ca kiểm thử)",
+    "status": "unverified"
+   }
+  }
+ ]
+}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import type { AddressCardData, CulturalNoteData, UICardSpec } from '@app/shared-types';
+import type { AddressCardData, CulturalNoteData, UICardSpec, FormInteraction } from '@app/shared-types';
+import { ScenarioForm } from './ScenarioForm';
 import { Icon } from './Icons';
 import type { ChatItem, Suggestion } from '@app/chat-state';
 
@@ -32,9 +33,10 @@ export function CulturalNoteCard({ data }: { data: CulturalNoteData }) {
   );
 }
 
-export function renderCard(card: UICardSpec): React.ReactNode {
-  // UI registry đóng (Constitution #11): chỉ 3 loại; loại lạ đã bị client lọc, đây là lớp phòng thủ cuối.
+export function renderCard(card: UICardSpec, form?: { disabled: boolean; submitted: boolean; onSubmit: (value: FormInteraction, summary: string) => void }): React.ReactNode {
+  // UI registry đóng (Constitution #11): loại lạ đã bị client lọc, đây là lớp phòng thủ cuối.
   switch (card.type) {
+    case 'scenario_form': return form ? <ScenarioForm data={card.data} {...form} /> : null;
     case 'address': return <AddressCard data={card.data} />;
     case 'cultural_note': return <CulturalNoteCard data={card.data} />;
     default: return null; // reply_suggestion hiển thị ở dải gợi ý, không nằm trong luồng tin nhắn

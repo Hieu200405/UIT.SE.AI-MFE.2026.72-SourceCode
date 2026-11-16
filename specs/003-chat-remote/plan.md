@@ -12,3 +12,16 @@
 | Strategy cho chế độ phản hồi (1.9) chỉ đặt sẵn interface, chưa làm UI. | Nice-to-have. | – |
 
 Rủi ro: streaming + abort (test với mock stream trước); MF cấu hình (PoC Ngày 15).
+
+## T204 — Kiểm thử nghiệm thu 2026-11-11
+
+Playwright sở hữu server thử nghiệm, không tái sử dụng server đang chạy của người phát triển. Facade test dùng bộ nhớ và mock, vô hiệu cấu hình LLM/SQLite kế thừa từ môi trường; không đọc .env. Chạy 22 ca trên Chromium hoặc Edge có sẵn qua PW_CHROMIUM_PATH.
+
+## T209
+Registry thêm scenario_form được user duyệt. Facade sở hữu định nghĩa form cho 8 scenario; client chỉ render select/text/textarea. ChatRequest có interactive và interaction; retry dùng nguyên payload với requestId mới. Mobile không opt-in nên giữ luồng cũ. Files/AC tại tasks.md.
+
+## T210 — Kiến trúc hiện hành (thay T209)
+LLM stream lời thoại và block <ui> JSON tùy chọn. Facade buffer/validate block trước ui_card; server cấp formId và lưu schema được phát ở turn done. Client render generic registry, không biết trường goal/detail/sentence cố định. Khi submit, server đối chiếu active form theo user/scenario, dựng structured user message từ labels+values đã validate. UI cũ hết hạn sau turn mới; hủy/lỗi giữ khả năng Retry. Không thêm dependency. Files/AC tại tasks.md.
+
+## T212
+Giữ contract hiện tại: model vẫn quyết định kind/fields/options/title và có thể không sinh UI. Renderer chọn cách trình bày theo kind, không tra tên scenario/từ khóa. Dùng CSS prefix chat, motion giảm theo prefers-reduced-motion, native inputs cho bàn phím. Form inactive thu gọn với details xem lại; sent ref phân biệt thao tác gửi thật và form bị thay bằng chat. Không thêm sửa form đã hết hạn (server chỉ chấp nhận active form). Không đổi rules/culture.

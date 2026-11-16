@@ -1,16 +1,17 @@
 import { DEFAULT_PROFILE } from '@app/shared-types';
-import type { Profile, ProgressSnapshot, Scenario } from '@app/shared-types';
+import type { Profile, ProgressSnapshot, Scenario, ScenarioFormData } from '@app/shared-types';
 import { computeConfidence, deriveScenarioStatus, pickRecommended } from './progress.ts';
 import type { SessionRecord } from './progress.ts';
 import type { HistoryItem } from './prompt.ts';
 
 export interface UserRecord {
+  activeForms: Record<string, ScenarioFormData>;
   profile: Profile; turns: Record<string, number>; markedDone: Set<string>; addressingErrors: number; sessions: SessionRecord[];
   history: Record<string, HistoryItem[]>;     // lịch sử hội thoại theo tình huống (cho LLM); reset khi vào lại tình huống
   notesShown: Record<string, string[]>;       // ghi chú văn hóa đã hiện trong buổi hiện tại
 }
 
-export const newUser = (): UserRecord => ({ profile: { ...DEFAULT_PROFILE }, turns: {}, markedDone: new Set(), addressingErrors: 0, sessions: [], history: {}, notesShown: {} });
+export const newUser = (): UserRecord => ({ activeForms: {}, profile: { ...DEFAULT_PROFILE }, turns: {}, markedDone: new Set(), addressingErrors: 0, sessions: [], history: {}, notesShown: {} });
 
 export const serializeUser = (u: UserRecord): string => JSON.stringify({ ...u, markedDone: [...u.markedDone] });
 export function deserializeUser(json: string): UserRecord {
@@ -44,6 +45,7 @@ export function buildSnapshot(catalog: Scenario[], u: UserRecord): ProgressSnaps
 
 /** Mỗi lần vào tình huống (kind 'open') là một buổi luyện mới; lịch sử hội thoại và ghi chú đã hiện được đặt lại. */
 export function startSession(u: UserRecord, scenarioId: string, now = new Date()) {
+  delete u.activeForms[scenarioId];
   u.sessions.push({ scenarioId, startedAt: now.toISOString(), turns: 0, addressingErrors: 0 });
   u.history[scenarioId] = []; u.notesShown[scenarioId] = [];
 }
@@ -60,6 +62,7 @@ export function pushHistory(u: UserRecord, scenarioId: string, items: HistoryIte
 
 /** DỮ LIỆU DEMO (chỉ môi trường phát triển): 8 buổi luyện với số lỗi giảm dần, trạng thái giống wireframe. */
 export function seedDemo(u: UserRecord) {
+  u.activeForms = {};
   const plan: Array<[string, number]> = [['renting', 7], ['renting', 6], ['market', 6], ['banking', 4], ['banking', 4], ['street_food', 3], ['street_food', 2], ['renting', 1]];
   u.turns = {}; u.sessions = []; u.addressingErrors = 0; u.markedDone = new Set(['banking', 'street_food']); u.history = {}; u.notesShown = {};
   const day = 86_400_000; const t0 = Date.now() - plan.length * day;

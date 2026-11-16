@@ -173,3 +173,20 @@ test('/dev/seed: chỉ có khi bật dev; dữ liệu demo giống wireframe (8 
   assert.ok(p.confidence.administrative > 0 && p.confidence.social === 0);
   assert.deepEqual(p.recommended, ['neighbors', 'renting'].sort((a, b) => (a === 'renting' ? -1 : 1))); // đang dở ưu tiên trước
 });
+
+test('mock never pretends to generate UI, even for web opt-in', async () => {
+  for (const scenario of scenarios) {
+    const c = user();
+    for (const kind of ['open', 'message'] as const) {
+      const r = await run(c, { requestId: kind, scenarioId: scenario.id, kind, message: 'Xin chào', interactive: true });
+      assert.equal(r.outcome, 'done');
+      assert.ok(!r.events.some((e) => e.type === 'ui_card' && e.card.type === 'scenario_form'));
+    }
+  }
+});
+
+test('static or forged form IDs cannot be submitted', async () => {
+  const r = await fetch(base + '/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-anonymous-id': 'forged-form-user' },
+    body: JSON.stringify({ ...msg('Prepare'), interactive: true, interaction: { formId: 'renting:prepare', values: { goal: 'Ask about rent' } } }) });
+  assert.equal(r.status, 409);
+});

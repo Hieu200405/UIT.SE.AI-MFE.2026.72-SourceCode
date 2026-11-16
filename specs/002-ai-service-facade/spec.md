@@ -14,6 +14,7 @@
 | `error` | `error{message, retryable}` (chưa quy định mã lỗi/HTTP status) |
 
 ## FR
+- AC-validation: `suggestedTerms.call/self` chỉ là chuỗi hoặc null; `regionalNote` tùy chọn phải là chuỗi; `needs_clarification.assumptions/options` tùy chọn phải là mảng chuỗi. Trường sai kiểu bị từ chối trước khi UI dùng `.map()` hoặc render thành React child (T206).
 - FR-1 Chuẩn hóa mọi output LLM/mock về StreamEvent hợp lệ trước khi gửi; payload sai → event `error`, không lộ stack trace.
 - FR-2 Tính xưng hô bằng rule engine trước khi gọi LLM; thiếu hoàn toàn dữ kiện → `needs_clarification`.
 - FR-3 Cung cấp dữ liệu tiến độ cho Chat/Progress: trạng thái từng tình huống (new/in_progress/done) và thống kê lỗi xưng hô theo thời gian.
@@ -59,3 +60,12 @@ Cần cập nhật tài liệu API & Integration Contract: translation, assumpti
 - `ProgressSnapshot` thêm `sessions[]` (buổi luyện = mỗi lần `open`; chỉ tính buổi có ≥ 1 lượt hoàn tất) và `confidence{administrative,daily_life,social}` (0–100).
 - Facade: `GET /health` → `{ok, dev}`; `POST /dev/seed` (chỉ khi `FACADE_DEV=1`) nạp dữ liệu demo 8 buổi như wireframe. **Phải bỏ khỏi bản chạy thật.**
 - Công thức Confidence (đề xuất, chưa kiểm chứng): `100 × coverage × (0,5 + 0,5 × accuracy)`; coverage = (Done + 0,5 × đang luyện)/số tình huống trong nhóm; accuracy = 1 − lỗi/lượt trên ≤ 5 buổi gần nhất của nhóm.
+
+## T209
+Định nghĩa và xác thực form do Facade sở hữu; từ chối field/option/formId sai trước SSE. Chuẩn bị không tính lượt luyện; chỉ câu thực hành hoàn tất được tính. Form là hướng dẫn học ngôn ngữ, không tư vấn y tế/pháp lý hoặc giao dịch thật.
+
+## T210 (thay T209)
+Sinh UI do LLM quyết định ở open/message của web opt-in, không catalog form theo scenario. Giữ rule-first và dữ liệu văn hóa kiểm soát. UI không hợp lệ → giữ lời thoại và nhắc trả lời bằng chat; không render JSON/HTML. Submission chỉ hợp lệ với schema do Facade phát cho chính user/scenario; stale/forged → 409, field/value sai → 400. Thao tác UI không tính là câu luyện tiếng Việt; chỉ tin nhắn tự gõ hoàn tất tính lượt. Không tự chấm Done.
+
+## T211
+Nghiệm thu thật phải xác nhận health mode llm, không fallback mock; browser thao tác qua Facade thật. Không đọc/ghi .env hoặc secret trong phiên agent; người dùng nhập khóa qua secure prompt tại máy.

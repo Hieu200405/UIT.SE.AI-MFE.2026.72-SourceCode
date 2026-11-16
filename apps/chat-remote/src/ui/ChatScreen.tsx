@@ -15,6 +15,7 @@ export function ChatScreen({ client, scenario, flags, idleTimeoutMs, onBack, onC
 }) {
   const { state, send, stop, retry, requestHint } = useChat({ client, scenarioId: scenario.id, idleTimeoutMs });
   const [draft, setDraft] = useState('');
+  const [mode, setMode] = useState<'llm' | 'mock' | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [status, setStatus] = useState<ScenarioStatus>('new');
   const [doneError, setDoneError] = useState<string | null>(null);
@@ -26,6 +27,11 @@ export function ChatScreen({ client, scenario, flags, idleTimeoutMs, onBack, onC
   }, [client, scenario.id]);
 
   useEffect(loadProfile, [loadProfile]);
+  useEffect(() => {
+    let active = true;
+    client.getHealth().then((health) => { if (active) setMode(health.mode ?? null); }).catch(() => {});
+    return () => { active = false; };
+  }, [client]);
   useEffect(loadStatus, [loadStatus]);
   useEffect(() => eventBus.subscribe('profileUpdated', loadProfile), [loadProfile]);   // event chỉ là tín hiệu → lấy lại từ Facade
   useEffect(() => { if (state.current?.state === 'completed' && state.current.kind === 'message') loadStatus(); }, [state.current?.state, state.current?.requestId, loadStatus]);
@@ -54,10 +60,19 @@ export function ChatScreen({ client, scenario, flags, idleTimeoutMs, onBack, onC
         <button onClick={onBack} className="chat:font-semibold chat:text-teal-800">Change</button>
       </header>
       <Sidebar scenario={scenario} profile={profile} status={status} onChange={onBack} onToggleDone={toggleDone} doneError={doneError} />
-      <section className="chat:flex chat:min-w-0 chat:flex-1 chat:flex-col chat:gap-3 chat:p-3 chat:md:p-4">
+      <section className="chat:workspace chat:flex chat:min-w-0 chat:flex-1 chat:flex-col chat:gap-3 chat:p-3 chat:md:p-8">
         <div className="chat:mx-auto chat:flex chat:w-full chat:max-w-2xl chat:flex-1 chat:flex-col chat:gap-3">
+          <div className="chat:workspace-header">
+            <div><div className="chat:workspace-label">Your practice space</div><h2 className="chat:workspace-title">A little practice. Real confidence.</h2></div>
+            <p data-testid="agent-mode" className="chat:mode-pill">
+              {mode === 'mock' ? 'Sample conversation · AI-generated questions unavailable' : mode === 'llm' ? 'Interactive practice · Guided by your conversation' : 'Your conversation, your pace'}
+            </p>
+          </div>
           <div className="chat:flex-1">
-            <MessageList items={state.items} busy={busy} roleLabel={scenario.character.roleLabel} onStop={stop} onPick={(t) => send(t)} />
+            <MessageList items={state.items} busy={busy} roleLabel={scenario.character.roleLabel} onStop={stop} onPick={(t) => send(t)} onForm={(value, summary) => {
+              if (busy) return;
+              send(summary.slice(0, 500), undefined, value);
+            }} />
           </div>
           {cur?.state === 'cancelled' && <p data-testid="stopped" role="status" className="chat:ml-10 chat:text-sm chat:text-stone-500">Reply stopped. You can send a new message.</p>}
           {cur?.state === 'failed' && cur.error && <ErrorBanner message={cur.error.message} retryable={cur.error.retryable} onRetry={retry} />}

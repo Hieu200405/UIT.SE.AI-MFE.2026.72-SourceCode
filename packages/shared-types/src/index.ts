@@ -4,9 +4,18 @@
  * reply suggestion có translation, needs_clarification, error có retryable.
  */
 
-export const CONTRACT_VERSION = '0.5.0';
+export const CONTRACT_VERSION = '0.7.0';
 
-// ---------- Thẻ UI (registry đóng: 3 loại) ----------
+export interface ScenarioFormData {
+  formId: string;
+  title: string;
+  description: string;
+  submitLabel: string;
+  fields: Array<{ id: string; label: string; kind: 'choice' | 'select' | 'text' | 'textarea'; required: boolean; options?: string[] }>;
+}
+export interface FormInteraction { formId: string; values: Record<string, string> }
+
+// ---------- Thẻ UI (registry đóng; scenario_form được web opt-in từ v0.6) ----------
 export interface AddressCardData {
   originalText: string;            // "You said"
   suggestedText: string;           // "Suggested"
@@ -26,11 +35,12 @@ export interface ReplySuggestionData {
 }
 
 export type UICardSpec =
+  | { type: 'scenario_form'; data: ScenarioFormData }
   | { type: 'address'; data: AddressCardData }
   | { type: 'cultural_note'; data: CulturalNoteData }
   | { type: 'reply_suggestion'; data: ReplySuggestionData };
 
-export const UI_REGISTRY_TYPES = ['address', 'cultural_note', 'reply_suggestion'] as const;
+export const UI_REGISTRY_TYPES = ['address', 'cultural_note', 'reply_suggestion', 'scenario_form'] as const;
 
 // ---------- SSE ----------
 export interface TextDeltaEvent { type: 'text_delta'; requestId: string; partId: string; text: string; translation?: string }
@@ -65,15 +75,37 @@ export interface ProfileUpdated {
 // ---------- Validators (không phụ thuộc thư viện ngoài) ----------
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const optionalStrings = (v: unknown): boolean => v === undefined || (Array.isArray(v) && v.every(isStr));
+const boundedText = (v: unknown, max: number): v is string => isStr(v) && v.trim().length > 0 && v.length <= max;
+const onlyKeys = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every((k) => keys.includes(k));
+
+/** Strict schema shared by the LLM boundary and renderer; no arbitrary props. */
+export function validateScenarioForm(v: unknown): v is ScenarioFormData {
+  if (!isObj(v) || !onlyKeys(v, ['formId', 'title', 'description', 'submitLabel', 'fields']) ||
+    !boundedText(v.formId, 100) || !boundedText(v.title, 120) || !boundedText(v.description, 500) || !boundedText(v.submitLabel, 60) ||
+    !Array.isArray(v.fields) || v.fields.length < 1 || v.fields.length > 5) return false;
+  return new Set(v.fields.map((f) => isObj(f) ? f.id : null)).size === v.fields.length && v.fields.every((f) => {
+    if (!isObj(f) || !onlyKeys(f, ['id', 'label', 'kind', 'required', 'options']) ||
+      !isStr(f.id) || !/^[a-z][a-z0-9_]{0,30}$/.test(f.id) || ['constructor', 'prototype', '__proto__'].includes(f.id) ||
+      !boundedText(f.label, 160) || typeof f.required !== 'boolean') return false;
+    if (f.kind === 'text' || f.kind === 'textarea') return f.options === undefined;
+    return (f.kind === 'select' || f.kind === 'choice') && Array.isArray(f.options) && f.options.length >= 2 && f.options.length <= 8 &&
+      f.options.every((o) => boundedText(o, 120)) && new Set(f.options).size === f.options.length;
+  });
+}
 
 export function validateUICard(v: unknown): v is UICardSpec {
   if (!isObj(v) || !isObj(v.data) || !isStr(v.type)) return false;
   const d = v.data;
   switch (v.type) {
+    case 'scenario_form':
+      return validateScenarioForm(d);
     case 'address':
       return isStr(d.originalText) && isStr(d.suggestedText) && isStr(d.explanation) &&
         typeof d.isCorrection === 'boolean' && isObj(d.suggestedTerms) &&
-        (d.assumptions === undefined || (Array.isArray(d.assumptions) && d.assumptions.every(isStr)));
+        (d.suggestedTerms.call === null || isStr(d.suggestedTerms.call)) &&
+        (d.suggestedTerms.self === null || isStr(d.suggestedTerms.self)) &&
+        (d.regionalNote === undefined || isStr(d.regionalNote)) && optionalStrings(d.assumptions);
     case 'cultural_note':
       return isStr(d.title) && isStr(d.explanation) && typeof d.verified === 'boolean';
     case 'reply_suggestion':
@@ -94,7 +126,7 @@ export function parseStreamEvent(v: unknown): StreamEvent | null {
     case 'user_translation':
       return isStr(v.translation) && v.translation.length > 0 ? (v as unknown as UserTranslationEvent) : null;
     case 'needs_clarification':
-      return isStr(v.question) ? (v as unknown as NeedsClarificationEvent) : null;
+      return isStr(v.question) && optionalStrings(v.assumptions) && optionalStrings(v.options) ? (v as unknown as NeedsClarificationEvent) : null;
     case 'done':
       return v as unknown as DoneEvent;
     case 'error':
@@ -179,9 +211,13 @@ export interface ProgressSnapshot {
 }
 
 export type ChatKind = 'open' | 'message' | 'hint';
-export interface ChatRequest { requestId: string; scenarioId: string; kind: ChatKind; message?: string }
+export interface ChatRequest { requestId: string; scenarioId: string; kind: ChatKind; message?: string; interactive?: boolean; interaction?: FormInteraction }
 export function validateChatRequest(v: unknown): v is ChatRequest {
   return isObj(v) && isStr(v.requestId) && v.requestId.length > 0 && isStr(v.scenarioId) &&
+    (v.interactive === undefined || typeof v.interactive === 'boolean') &&
+    (v.interaction === undefined || (v.kind === 'message' && isObj(v.interaction) && isStr(v.interaction.formId) &&
+      isObj(v.interaction.values) && !Array.isArray(v.interaction.values) && Object.keys(v.interaction.values).length <= 5 &&
+      Object.values(v.interaction.values).every((x) => isStr(x) && x.length <= 300))) &&
     (v.kind === 'open' || v.kind === 'message' || v.kind === 'hint') &&
     (v.message === undefined || (isStr(v.message) && v.message.length <= 500)) &&
     (v.kind !== 'message' || (isStr(v.message) && v.message.trim().length > 0));

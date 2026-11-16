@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { eventBus } from '@app/event-bus';
 import { FacadeError } from '@app/facade-client';
 import type { FacadeClient } from '@app/facade-client';
-import type { ChatRequest } from '@app/shared-types';
+import type { ChatRequest, FormInteraction } from '@app/shared-types';
 import { chatReducer, initialChatState } from '@app/chat-state';
 
 /** Nối reducer (trạng thái) với client SSE (I/O) và event-bus. Toàn bộ quy tắc hủy/muộn/lỗi nằm ở reducer + client. */
@@ -11,9 +11,12 @@ export function useChat(opts: { client: FacadeClient; scenarioId: string; idleTi
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const abortRef = useRef<AbortController | null>(null);
   const counter = useRef(0);
+  const lastRequest = useRef<ChatRequest | null>(null);
   const newId = () => `req-${Date.now().toString(36)}-${++counter.current}`;
 
   const run = useCallback(async (req: ChatRequest) => {
+    req = { ...req, interactive: true };
+    lastRequest.current = req;
     abortRef.current?.abort();                      // mỗi lúc chỉ một luồng; luồng cũ bị hủy
     const ac = new AbortController(); abortRef.current = ac;
     try {
@@ -43,11 +46,11 @@ export function useChat(opts: { client: FacadeClient; scenarioId: string; idleTi
     }
   }, [state.current, scenarioId]);
 
-  const send = useCallback((text: string, translation?: string) => {
+  const send = useCallback((text: string, translation?: string, interaction?: FormInteraction) => {
     const message = text.trim(); if (!message) return;
     const requestId = newId();
     dispatch({ type: 'send', requestId, text: message, translation });
-    void run({ requestId, scenarioId, kind: 'message', message });
+    void run({ requestId, scenarioId, kind: 'message', message, interaction });
   }, [run, scenarioId]);
   const requestHint = useCallback(() => {
     const requestId = newId(); dispatch({ type: 'hint', requestId }); void run({ requestId, scenarioId, kind: 'hint' });
@@ -57,7 +60,7 @@ export function useChat(opts: { client: FacadeClient; scenarioId: string; idleTi
     const c = state.current; if (!c || c.state !== 'failed') return;
     const requestId = newId();
     dispatch({ type: 'retry', requestId });
-    void run({ requestId, scenarioId, kind: c.kind, ...(c.kind === 'message' ? { message: c.text } : {}) });
+    void run({ ...lastRequest.current!, requestId, scenarioId, kind: c.kind });
   }, [run, scenarioId, state.current]);
 
   return { state, send, stop, retry, requestHint };

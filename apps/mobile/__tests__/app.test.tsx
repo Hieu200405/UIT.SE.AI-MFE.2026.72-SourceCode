@@ -28,8 +28,11 @@ describe('FacadeProvider', () => {
 
 describe('Route /chat/[id]', () => {
   test('id hợp lệ (renting) → nạp tình huống rồi mở màn Chat', async () => {
-    await render(withFacade(makeClient(), <ChatRoute />));
+    const view = await render(withFacade(makeClient(), <ChatRoute />));
     expect(await screen.findByTestId('scenario-title')).toHaveTextContent('Renting a place');
+    await screen.findByText('Chào cháu, cháu muốn hỏi gì về căn phòng?');
+    await waitFor(() => expect(screen.queryByTestId('replying')).not.toBeOnTheScreen());
+    await view.unmount();
   });
   test('tình huống không tồn tại / Facade lỗi → màn lỗi có Retry và Back', async () => {
     await render(withFacade(makeClient({ getScenarios: jest.fn(async () => []) }), <ChatRoute />));

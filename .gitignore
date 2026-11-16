@@ -7,6 +7,10 @@ playwright-report/
 *.db-wal
 *.db-shm
 data/
+!packages/rules-xung-ho/data/
+!packages/rules-xung-ho/data/rules.json
+!packages/ai-service-facade/data/
+!packages/ai-service-facade/data/scenarios.json
 apps/mobile/node_modules/
 apps/mobile/dist/
 apps/mobile/.expo/
