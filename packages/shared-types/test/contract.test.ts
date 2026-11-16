@@ -42,6 +42,26 @@ test('address card: assumptions phải là mảng chuỗi', () => {
   assert.equal(validateUICard({ type: 'address', data: { ...base, assumptions: [1] } }), false);
 });
 
+test('address: từ chối nested field sai kiểu, giữ cách xưng hô trung tính null', () => {
+  const data = { originalText: 'a', suggestedText: 'b', suggestedTerms: { call: null, self: null }, isCorrection: false, explanation: 'x' };
+  assert.ok(validateUICard({ type: 'address', data }));
+  for (const suggestedTerms of [{}, { call: {}, self: null }, { call: 'bác', self: 7 }]) {
+    assert.equal(parseStreamEvent({ type: 'ui_card', requestId: 'r', card: { type: 'address', data: { ...data, suggestedTerms } } }), null);
+  }
+  assert.equal(validateUICard({ type: 'address', data: { ...data, regionalNote: {} } }), false);
+});
+
+test('clarify: không để options/assumptions sai kiểu lọt vào UI map()', () => {
+  const base = { type: 'needs_clarification', requestId: 'r', question: 'How old?' };
+  for (const field of ['options', 'assumptions']) {
+    for (const value of [null, 'older', {}, [1], [{ text: 'older' }]]) {
+      assert.equal(parseStreamEvent({ ...base, [field]: value }), null, `${field}: ${JSON.stringify(value)}`);
+    }
+    assert.ok(parseStreamEvent({ ...base, [field]: [] }));
+    assert.ok(parseStreamEvent({ ...base, [field]: ['Older than me'] }));
+  }
+});
+
 import { SseParser, formatSseEvent, validateProfile, validateChatRequest, DEFAULT_PROFILE } from '../src/index.ts';
 import type { StreamEvent } from '../src/index.ts';
 
@@ -78,4 +98,24 @@ test('user_translation: cần requestId và translation không rỗng', () => {
   assert.ok(parseStreamEvent({ type: 'user_translation', requestId: 'r', translation: 'Hello' }));
   assert.equal(parseStreamEvent({ type: 'user_translation', requestId: 'r', translation: '' }), null);
   assert.equal(parseStreamEvent({ type: 'user_translation', requestId: 'r' }), null);
+});
+
+test('interactive form contract validates fields and bounded structured input', () => {
+  const data = { formId: 'renting:prepare', title: 'Prepare', description: 'Choose', submitLabel: 'Continue', fields: [{ id: 'goal', label: 'Goal', kind: 'select', required: true, options: ['Rent', 'Utilities'] }] };
+  assert.equal(validateUICard({ type: 'scenario_form', data }), true);
+  assert.equal(validateUICard({ type: 'scenario_form', data: { ...data, fields: [{ ...data.fields[0], options: [42] }] } }), false);
+  assert.equal(validateUICard({ type: 'scenario_form', data: { ...data, fields: [data.fields[0], data.fields[0]] } }), false);
+  assert.equal(validateUICard({ type: 'scenario_form', data: { ...data, fields: [{ ...data.fields[0], kind: 'html' }] } }), false);
+});
+
+test('generated form schema limits UI and rejects executable or ambiguous metadata', () => {
+  const data = { formId: 'issued-id', title: 'Choose', description: 'Pick one', submitLabel: 'Continue', fields: [{ id: 'dish', label: 'Dish', kind: 'choice', required: true, options: ['Phở', 'Bún'] }] };
+  assert.ok(validateUICard({ type: 'scenario_form', data }));
+  for (const invalid of [
+    { ...data, title: 'x'.repeat(121) }, { ...data, actionUrl: '/do-something' },
+    { ...data, fields: [{ ...data.fields[0], options: ['Phở', 'Phở'] }] },
+    { ...data, fields: [{ ...data.fields[0], id: 'constructor' }] },
+    { ...data, fields: [{ ...data.fields[0], onChange: 'run()' }] },
+    { ...data, fields: [{ ...data.fields[0], kind: 'text' }] },
+  ]) assert.equal(validateUICard({ type: 'scenario_form', data: invalid }), false);
 });

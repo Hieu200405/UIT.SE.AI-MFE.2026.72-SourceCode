@@ -11,7 +11,7 @@ npm install                                   # cài tách khỏi workspace gố
 EXPO_PUBLIC_FACADE_URL=http://<IP máy tính>:4000 npx expo start
 ```
 Địa chỉ Facade (`EXPO_PUBLIC_FACADE_URL`): iOS Simulator `http://localhost:4000` · Android Emulator `http://10.0.2.2:4000` · điện thoại thật `http://<IP LAN máy tính>:4000` (cùng mạng Wi-Fi).
-Dùng **Expo Go bản SDK 57** (SDK 58 mới ra 19/10/2026; Expo Go trên cửa hàng chưa hỗ trợ).
+Dùng **Expo Go tương thích SDK 57**. Không mặc định bản mới nhất trên cửa hàng tương thích: chọn phiên bản Android tại [trang Expo Go chính thức](https://expo.dev/go). Xem [hướng dẫn PowerShell và phiếu thử Android local](../../docs/acceptance/android-local.md) (T208, kiểm tra nguồn ngày 2026-11-11).
 
 ## Kiểm thử
 ```

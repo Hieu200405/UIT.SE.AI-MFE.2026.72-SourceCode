@@ -306,3 +306,115 @@ test('CSS: Host reset toàn cục; style Remote không đè nhau (cùng token m�
   expect(await page.evaluate(() => getComputedStyle(document.body).margin)).toBe('0px');
   expect(await page.getByRole('link', { name: 'Practice' }).first().evaluate((el) => getComputedStyle(el).textDecorationLine)).toBe('none');
 });
+
+
+test.describe('Generative Agent UI (real Facade, deterministic test provider)', () => {
+  let fixtureServer: ChildProcess;
+  const url = '/chat?facade=http://127.0.0.1:4002';
+  test.beforeAll(async () => {
+    fixtureServer = spawn('node', ['--experimental-strip-types', 'tests/fixtures/generative-provider.ts'], { stdio: 'pipe' });
+    for (let i = 0; i < 60; i++) {
+      try { if ((await fetch('http://127.0.0.1:4002/health')).ok) return; } catch {}
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('Generative test provider did not start');
+  });
+  test.afterAll(() => fixtureServer?.kill());
+
+  test('same scenario: conversation produces different UI, user action changes next UI, then text only', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(url);
+    await pick(page, 'renting');
+    await lastAgentDone(page);
+    await expect(page.getByTestId('scenario-form')).toHaveCount(0);
+    await expect(page.getByTestId('agent-mode')).toContainText('Interactive practice');
+    await say(page, 'I want to order noodles');
+    await lastAgentDone(page);
+    const form = page.getByTestId('scenario-form').last();
+    await expect(form).toContainText('What would you like to order?');
+    await form.getByRole('radio', { name: 'Phở', exact: true }).check();
+    await form.getByLabel('Anything else?').fill('Vegetables please');
+    await form.screenshot({ path: 'test-results/generative-ui-narrow.png' });
+    await form.getByRole('button', { name: 'Continue' }).click();
+    await lastAgentDone(page);
+    await expect(page.getByTestId('agent-text').filter({ hasText: 'Bạn chọn Phở' })).toBeVisible();
+    await expect(page.getByTestId('scenario-form').first()).toContainText('Phở · Vegetables please');
+    await expect(page.getByTestId('scenario-form').first().getByRole('radio')).toHaveCount(0);
+    const next = page.getByTestId('scenario-form').last();
+    await expect(next).toContainText('How spicy?');
+    await next.getByLabel('Spice level').selectOption('Not spicy');
+    await next.getByLabel('Try saying your order').fill('Không cay ạ.');
+    await next.getByRole('button', { name: 'Continue' }).click();
+    await lastAgentDone(page);
+    await expect(page.getByTestId('scenario-form')).toHaveCount(2);
+    await expect(page.getByTestId('scenario-form').last()).toContainText('Not spicy · Không cay ạ.');
+    await expect(page.getByTestId('scenario-form').last().locator('button[type=submit]')).toHaveCount(0);
+    await say(page, 'Help me find a room');
+    await lastAgentDone(page);
+    await expect(page.getByTestId('scenario-form').last()).toContainText('What matters in your room?');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test('Retry retains generated form answers; duplicate submit produces one request', async ({ page }) => {
+    await page.goto(url); await pick(page, 'street_food'); await lastAgentDone(page);
+    await say(page, 'I want noodles'); await lastAgentDone(page);
+    const form = page.getByTestId('scenario-form').last();
+    await form.getByRole('radio', { name: 'Bún', exact: true }).check();
+    let submissions = 0;
+    page.on('request', (r) => { if (r.url().endsWith('/chat/stream') && r.postDataJSON()?.interaction) submissions++; });
+    await page.route('**/chat/stream', (route) => route.abort(), { times: 1 });
+    await form.evaluate((el) => { (el as HTMLFormElement).requestSubmit(); (el as HTMLFormElement).requestSubmit(); });
+    await expect(page.getByTestId('chat-error')).toBeVisible();
+    expect(submissions).toBe(1);
+    await page.getByTestId('chat-error').getByRole('button', { name: 'Retry' }).click();
+    await lastAgentDone(page);
+    await expect(page.getByTestId('agent-text').filter({ hasText: 'Bạn chọn Bún' })).toBeVisible();
+    expect(submissions).toBe(2);
+    await page.getByTestId('scenario-form').last().screenshot({ path: 'test-results/generative-ui-desktop.png' });
+  });
+
+  test('Stop prevents late UI; invalid output falls back to chat; keyboard selects generated choices', async ({ page }) => {
+    await page.goto(url); await pick(page, 'street_food'); await lastAgentDone(page);
+    await say(page, 'slow noodles');
+    await expect(page.getByTestId('replying')).toBeVisible();
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await expect(page.getByTestId('stopped')).toBeVisible();
+    await expect(page.getByTestId('scenario-form')).toHaveCount(0);
+    await say(page, 'invalid ui'); await lastAgentDone(page);
+    await expect(page.getByTestId('agent-text').filter({ hasText: 'interactive question could not be displayed' })).toBeVisible();
+    await expect(page.getByTestId('scenario-form')).toHaveCount(0);
+    await say(page, 'noodles'); await lastAgentDone(page);
+    const option = page.getByRole('radio', { name: 'Phở', exact: true });
+    await option.focus(); await page.keyboard.press('Space'); await expect(option).toBeChecked();
+    await page.getByRole('button', { name: 'Continue' }).click(); await lastAgentDone(page);
+    await expect(page.getByTestId('scenario-form').last()).toContainText('How spicy?');
+  });
+
+
+  test('replaced questions collapse honestly; receipts expand; reduced motion and narrow layout', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(url); await pick(page, 'street_food'); await lastAgentDone(page);
+    await say(page, 'noodles'); await lastAgentDone(page);
+    await say(page, 'Help me find a room'); await lastAgentDone(page);
+    const receipt = page.getByTestId('scenario-form').first();
+    await expect(receipt).toContainText('Continued in chat');
+    await receipt.locator('summary').focus(); await page.keyboard.press('Enter');
+    await expect(receipt.getByText('This question was replaced by your next message.')).toBeVisible();
+    await expect(receipt.getByRole('button')).toHaveCount(0);
+    const active = page.getByTestId('scenario-form').last();
+    expect(await active.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: 'test-results/agent-polish-mobile.png', fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: 'test-results/agent-polish-desktop.png', fullPage: true });
+  });
+
+  test('mock is visibly labeled and never appends fixed forms', async ({ page }) => {
+    await page.goto('/chat'); await pick(page, 'renting'); await lastAgentDone(page);
+    await expect(page.getByTestId('agent-mode')).toContainText('Sample conversation');
+    await expect(page.getByTestId('scenario-form')).toHaveCount(0);
+    await say(page, 'I want noodles'); await lastAgentDone(page);
+    await expect(page.getByTestId('scenario-form')).toHaveCount(0);
+  });
+});

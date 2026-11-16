@@ -9,7 +9,4 @@ jest.mock('expo-router', () => {
 jest.mock('expo/fetch', () => ({ fetch: jest.fn() }));
 jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
 
-// Cảnh báo act() phát sinh BÊN TRONG VirtualizedList của React Native (cập nhật bố cục nội bộ), không phải từ mã của app.
-// Chỉ lọc đúng thông báo này; mọi cảnh báo/lỗi khác vẫn hiện.
-const realError = console.error;
-console.error = (...args) => { if (typeof args[0] === 'string' && args[0].startsWith('An update to VirtualizedList')) return; realError(...args); };
+// Keep React warnings visible: tests must await their asynchronous UI work.

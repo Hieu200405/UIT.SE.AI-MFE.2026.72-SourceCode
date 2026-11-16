@@ -1,5 +1,9 @@
 # AI-MFE – Vietnamese for real life
 
+**Đợt hoàn tất baseline 2026-11-11:** xem [hồ sơ nghiệm thu](docs/acceptance/README.md), [đối chiếu tài liệu](docs/acceptance/source-audit.md) và [task T201–T206](specs/000-master/tasks.md). Phạm vi đã chốt: 10 Core + Mobile 4 màn. Cổng nội dung/triển khai/thiết bị còn mở được ghi riêng; không coi test local là nghiệm thu 100%.
+
+Kiểm tra thêm trước PR: `npm run lint` (kiến trúc + CSS); `npm test` bao gồm kiểm tra hai catalog nguồn không bị Git bỏ qua. File dữ liệu mới cần được đưa vào commit cùng code. Không đưa SQLite hoặc file môi trường cục bộ vào Git.
+
 ```
 npm install
 npm test                  # unit + contract + facade + reducer + biểu đồ + CSS isolation

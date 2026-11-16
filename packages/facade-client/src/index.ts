@@ -56,7 +56,7 @@ export function createFacadeClient(cfg: { baseUrl: string; anonymousId?: string;
     getScenarios: () => call<{ scenarios: Scenario[] }>('/scenarios').then((r) => r.scenarios),
     getProfile: () => call<{ profile: Profile }>('/profile').then((r) => r.profile),
     putProfile: (profile: Profile) => call<{ profile: Profile }>('/profile', { method: 'PUT', body: JSON.stringify({ profile }) }).then((r) => r.profile),
-    getHealth: () => call<{ ok: boolean; dev: boolean }>('/health'),
+    getHealth: () => call<{ ok: boolean; dev: boolean; mode?: 'mock' | 'llm' }>('/health'),
     /** Chỉ môi trường phát triển (Facade bật FACADE_DEV=1). Phải bỏ khỏi bản chạy thật. */
     dev: { seed: () => call<ProgressSnapshot>('/dev/seed', { method: 'POST', body: '{}' }) },
     getProgress: () => call<ProgressSnapshot>('/progress'),

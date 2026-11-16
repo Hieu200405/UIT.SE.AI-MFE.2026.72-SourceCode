@@ -55,3 +55,12 @@ Chấm điểm phát âm; STT/nhập giọng nói; ngữ pháp tách rời tình
 ## Cập nhật v0.3
 - FR-5 mở rộng: tin của người học cũng có bản dịch EN khi Facade gửi `user_translation` (không bắt buộc).
 - FR-15 Sau khi dừng (Stop), hiện ghi chú "Reply stopped…" (kể cả khi chưa nhận được chữ nào).
+
+## T209
+Web opt-in interactive forms: chọn mục tiêu/ghi ngữ cảnh → luyện câu → hướng dẫn tiếp. Form có label, required, giới hạn độ dài, trạng thái gửi/đã gửi. Không cho gửi form cũ hoặc chưa stream hoàn tất. Người học vẫn tự đánh dấu Done.
+
+## T210 — Yêu cầu hiện hành (thay T209)
+LLM tự quyết định thời điểm và nội dung UI khi người học giao tiếp; không bắt chọn mục tiêu theo wizard. UI có thể là lựa chọn nhanh, select, ô nhập hoặc nhiều trường. Thao tác được gửi qua Facade cùng ngữ cảnh câu hỏi, rồi LLM có thể trả lời thường hoặc sinh UI mới. Mock chỉ là hội thoại mẫu, không tuyên bố có UI do AI sinh.
+
+## T212
+Nâng cấp presentation của UI do AI sinh: choice dạng thẻ chọn, trường nhập rõ nhãn, footer hành động gọn; form cũ thu gọn có thể xem lại và phân biệt đã gửi/đã thay thế. Giữ tự do chat, không biến mục tiêu sidebar thành các bước bắt buộc. Trạng thái gửi không đồng nghĩa server đã xử lý thành công; lỗi vẫn Retry qua banner hiện có.

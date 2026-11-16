@@ -1,8 +1,9 @@
 import http from 'node:http';
 import { formatSseEvent, validateChatRequest, validateProfile } from '@app/shared-types';
-import type { Scenario, StreamEvent } from '@app/shared-types';
+import type { Scenario, ScenarioFormData, StreamEvent } from '@app/shared-types';
 import type { AddressRule } from '../../rules-xung-ho/src/index.ts';
 import { runTurn } from './engine.ts';
+import { interactionMessage, validInteraction } from './interactive.ts';
 import type { EngineOptions } from './engine.ts';
 import { Store, buildSnapshot, pushHistory, recordTurn, seedDemo, startSession } from './store.ts';
 
@@ -27,6 +28,7 @@ export function createFacade(opts: FacadeOptions): http.Server {
   const store = opts.store ?? new Store();
   const scale = opts.delayScale ?? 1;
   const mode = opts.engine?.llm ? 'llm' : 'mock';
+  const activeTurns = new Map<string, AbortController>();
   const CORS = {
     'Access-Control-Allow-Origin': opts.corsOrigin ?? '*',
     'Access-Control-Allow-Headers': 'content-type, x-anonymous-id',
@@ -74,30 +76,51 @@ export function createFacade(opts: FacadeOptions): http.Server {
         if (!validateChatRequest(body)) return reply(res, 400, { error: 'invalid_request' });
         const scenario = opts.scenarios.find((s) => s.id === body.scenarioId);
         if (!scenario) return reply(res, 404, { error: 'unknown_scenario' });
+        const form = user.activeForms[scenario.id];
+        if (body.interaction) {
+          if (!body.interactive || !form || form.formId !== body.interaction.formId) return reply(res, 409, { error: 'expired_interaction' });
+          if (!validInteraction(form, body.interaction)) return reply(res, 400, { error: 'invalid_interaction' });
+        }
+        const input = body.interaction ? interactionMessage(form, body.interaction.values) : body.message ?? '';
+        const turnKey = `${id}:${scenario.id}`;
+        activeTurns.get(turnKey)?.abort();
+        const ac = new AbortController();
+        activeTurns.set(turnKey, ac);
         if (body.kind === 'open') { startSession(user, scenario.id); store.save(id); }
 
-        const ac = new AbortController();
         res.on('close', () => ac.abort());                        // client đóng/hủy → hủy cả lời gọi LLM
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...CORS });
         const shown = new Set(user.notesShown[scenario.id] ?? []);
         const ctx = { scenario, profile: user.profile, turnIndex: user.turns[scenario.id] ?? 0, rules: opts.rules, devTriggers: !!opts.dev,
           history: user.history[scenario.id] ?? [], notesShown: shown };
-        let corrections = 0; let replyText = '';
-        for await (const step of runTurn(body, ctx, opts.engine ?? {}, ac.signal)) {
-          if ('stall' in step) { await new Promise<void>((r) => res.on('close', () => r())); return; } // giữ kết nối tới khi client đóng
-          await sleep(step.delayMs);
-          if (ac.signal.aborted) return;                          // client hủy: dừng, KHÔNG tính lượt
-          const e: StreamEvent = step.event;
-          if (e.type === 'ui_card' && e.card.type === 'address' && e.card.data.isCorrection) corrections++;
-          if (e.type === 'text_delta') replyText += e.text;
-          if (e.type === 'done' && body.kind === 'message') {     // ghi store TRƯỚC khi gửi done: client nhận done thì /progress đã nhất quán
-            recordTurn(user, scenario.id, corrections);
-            pushHistory(user, scenario.id, [{ role: 'user', text: body.message ?? '' }, { role: 'assistant', text: replyText.trim() }]);
-            user.notesShown[scenario.id] = [...shown]; store.save(id);
+        let corrections = 0; let replyText = ''; let generatedForm: ScenarioFormData | undefined;
+        try {
+          for await (const step of runTurn({ ...body, message: input }, ctx, opts.engine ?? {}, ac.signal)) {
+            if ('stall' in step) {
+              if (!ac.signal.aborted) await new Promise<void>((resolve) => ac.signal.addEventListener('abort', () => resolve(), { once: true }));
+              res.end(); return;
+            }
+            await sleep(step.delayMs);
+            if (ac.signal.aborted) { res.end(); return; }             // client hủy: dừng, KHÔNG tính lượt
+            const e: StreamEvent = step.event;
+            if (e.type === 'ui_card' && e.card.type === 'address' && e.card.data.isCorrection) corrections++;
+            if (e.type === 'text_delta' && e.partId === 'p1') replyText += e.text;
+            if (e.type === 'ui_card' && e.card.type === 'scenario_form') generatedForm = e.card.data;
+            if (e.type === 'done' && body.kind !== 'hint') {
+              if (body.kind === 'message' && !body.interaction) recordTurn(user, scenario.id, corrections);
+              if (generatedForm) user.activeForms[scenario.id] = generatedForm;
+              else delete user.activeForms[scenario.id];
+              const uiContext = generatedForm ? { title: generatedForm.title, description: generatedForm.description, submitLabel: generatedForm.submitLabel, fields: generatedForm.fields } : null;
+              const assistantText = replyText.trim() + (uiContext ? `\nInteractive question: ${JSON.stringify(uiContext)}` : '');
+              if (body.kind === 'message' || body.interactive) pushHistory(user, scenario.id, [...(body.kind === 'message' ? [{ role: 'user' as const, text: input }] : []), { role: 'assistant', text: assistantText }]);
+              user.notesShown[scenario.id] = [...shown]; store.save(id);
+            }
+            res.write(formatSseEvent(e));
           }
-          res.write(formatSseEvent(e));
+          return void res.end();
+        } finally {
+          if (activeTurns.get(turnKey) === ac) activeTurns.delete(turnKey);
         }
-        return void res.end();
       }
       reply(res, 404, { error: 'not_found' });
     } catch (err) {

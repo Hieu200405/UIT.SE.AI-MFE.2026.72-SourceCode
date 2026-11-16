@@ -3,11 +3,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import postcss from 'postcss';
 import tailwind from '@tailwindcss/postcss';
 
 const build = async (app) => {
-  const file = new URL(`../apps/${app}/src/styles.css`, import.meta.url).pathname;
+  const file = fileURLToPath(new URL(`../apps/${app}/src/styles.css`, import.meta.url));
   const out = await postcss([tailwind()]).process(readFileSync(file, 'utf8'), { from: file });
   const selectors = [], vars = new Set(), leaks = [];
   out.root.walkRules((r) => {
@@ -51,7 +52,7 @@ for (const [app, prefix] of [['host', 'host'], ['chat-remote', 'chat'], ['progre
   test(`${app}: mọi class "${prefix}:…" trong mã nguồn đều được sinh CSS`, async () => {
     const { selectors } = await build(app);
     const generated = selectors.map(unescape);
-    const dir = new URL(`../apps/${app}/src`, import.meta.url).pathname;
+    const dir = fileURLToPath(new URL(`../apps/${app}/src`, import.meta.url));
     const tokens = new Set(sourceFiles(dir).flatMap((f) => readFileSync(f, 'utf8').match(new RegExp(`(?<![\\w-])${prefix}:[^\\s"'\`{}]+`, 'g')) ?? []));
     assert.ok(tokens.size > 5, 'tìm thấy class trong mã nguồn');
     const missing = [...tokens].filter((t) => !generated.some((g) => g === t || g.startsWith(t + ':') || g.startsWith(t + ' ')));

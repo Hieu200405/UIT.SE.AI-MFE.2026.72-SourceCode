@@ -1,0 +1,189 @@
+{
+ "_note": "Danh mục tình huống – DRAFT (status=draft). Nội dung (nhân vật, mục tiêu, recommendedFor) do nhóm soạn dựa trên wireframe; cần rà soát. Thứ tự = thứ tự trên màn Practice. recommendedFor: settling = hành chính + hàng xóm (đã được nhóm xác nhận); long_term_travel và learning_culture là đề xuất.",
+ "version": "0.1.0",
+ "scenarios": [
+  {
+   "id": "renting",
+   "title": "Renting a place",
+   "group": "administrative",
+   "summary": "Ask about rent, utilities and the deposit.",
+   "icon": "home",
+   "character": {
+    "roleLabel": "Landlord",
+    "relationship": "landlord",
+    "gender": "male",
+    "ageApprox": 60,
+    "ageRange": "over50"
+   },
+   "objectives": [
+    "Ask the electricity price",
+    "Ask about the deposit",
+    "Ask for a receipt"
+   ],
+   "recommendedFor": [
+    "settling"
+   ],
+   "status": "draft"
+  },
+  {
+   "id": "doctor",
+   "title": "Visiting a doctor",
+   "group": "daily_life",
+   "summary": "Describe symptoms and understand advice.",
+   "icon": "medical",
+   "character": {
+    "roleLabel": "Doctor",
+    "relationship": "doctor",
+    "gender": "female",
+    "ageApprox": 42,
+    "ageRange": "35-50"
+   },
+   "objectives": [
+    "Describe your symptoms",
+    "Say how long you have had them",
+    "Confirm the doctor's advice"
+   ],
+   "recommendedFor": [],
+   "status": "draft"
+  },
+  {
+   "id": "visa",
+   "title": "Visa & temporary residence",
+   "group": "administrative",
+   "summary": "Handle paperwork at the ward office.",
+   "icon": "document",
+   "character": {
+    "roleLabel": "Ward office officer",
+    "relationship": "official",
+    "gender": "male",
+    "ageApprox": 40,
+    "ageRange": "35-50"
+   },
+   "objectives": [
+    "Ask which documents are needed",
+    "Ask how long it takes",
+    "Confirm what to bring next time"
+   ],
+   "recommendedFor": [
+    "settling"
+   ],
+   "status": "draft"
+  },
+  {
+   "id": "banking",
+   "title": "Banking",
+   "group": "administrative",
+   "summary": "Open an account and ask about fees.",
+   "icon": "bank",
+   "character": {
+    "roleLabel": "Bank teller",
+    "relationship": "bank_teller",
+    "gender": "female",
+    "ageApprox": 26,
+    "ageRange": "20-35"
+   },
+   "objectives": [
+    "Ask how to open an account",
+    "Ask about fees",
+    "Confirm the documents needed"
+   ],
+   "recommendedFor": [
+    "settling"
+   ],
+   "status": "draft"
+  },
+  {
+   "id": "market",
+   "title": "Market bargaining",
+   "group": "daily_life",
+   "summary": "Ask prices and negotiate politely.",
+   "icon": "basket",
+   "character": {
+    "roleLabel": "Market seller",
+    "relationship": "seller",
+    "gender": "female",
+    "ageApprox": 55,
+    "ageRange": "over50"
+   },
+   "objectives": [
+    "Ask the price",
+    "Make a polite counter-offer",
+    "Agree on the final price"
+   ],
+   "recommendedFor": [
+    "long_term_travel"
+   ],
+   "status": "draft"
+  },
+  {
+   "id": "neighbors",
+   "title": "Meeting neighbors",
+   "group": "social",
+   "summary": "Introduce yourself and make small talk.",
+   "icon": "people",
+   "character": {
+    "roleLabel": "Neighbor",
+    "relationship": "neighbor",
+    "gender": "female",
+    "ageApprox": 62,
+    "ageRange": "over50"
+   },
+   "objectives": [
+    "Introduce yourself",
+    "Say where you live",
+    "Make small talk"
+   ],
+   "recommendedFor": [
+    "settling",
+    "learning_culture"
+   ],
+   "status": "draft"
+  },
+  {
+   "id": "weddings",
+   "title": "Weddings & memorial dinners",
+   "group": "social",
+   "summary": "Greet hosts and join family occasions.",
+   "icon": "heart",
+   "character": {
+    "roleLabel": "Host",
+    "relationship": "family_host",
+    "gender": "male",
+    "ageApprox": 58,
+    "ageRange": "over50"
+   },
+   "objectives": [
+    "Greet the hosts",
+    "Respond to an invitation to eat or join",
+    "Say a polite goodbye"
+   ],
+   "recommendedFor": [
+    "learning_culture"
+   ],
+   "status": "draft"
+  },
+  {
+   "id": "street_food",
+   "title": "Street-food ordering",
+   "group": "daily_life",
+   "summary": "Order, customize and pay at a stall.",
+   "icon": "bowl",
+   "character": {
+    "roleLabel": "Street-food vendor",
+    "relationship": "seller",
+    "gender": "female",
+    "ageApprox": 27,
+    "ageRange": "20-35"
+   },
+   "objectives": [
+    "Order a dish",
+    "Customize it",
+    "Pay and confirm the total"
+   ],
+   "recommendedFor": [
+    "long_term_travel"
+   ],
+   "status": "draft"
+  }
+ ]
+}

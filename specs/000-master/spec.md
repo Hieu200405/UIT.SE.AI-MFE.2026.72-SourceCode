@@ -1,5 +1,15 @@
 # 000 – Master Spec (Spec of Specs)
 
+## Baseline được người dùng xác nhận ngày 2026-11-11
+
+Hoàn tất 10 Core + Mobile 4 màn theo CR-001 phương án A, kiểm thử và hồ sơ nghiệm thu. Không bao gồm việc tự bổ sung Should-have/Nice-to-have. Quyền cập nhật spec/plan/tasks và triển khai task bổ sung đã được xác nhận trong chat và ghi ở clarify.md.
+
+**Danh mục module hiện hành:** 001-host-shell; 002-ai-service-facade; 003-chat-remote; 004-progress-remote; 006-personalization; 006-mobile-companion; 008-cicd-docker. Số 005 cho Personalization trong bảng lịch sử dưới đây là tên cũ. Các scaffold rỗng không phải nguồn chuẩn.
+
+AC nghiệm thu: build/lint/test, 15 ca xưng hô, tích hợp xuyên Remote và Mobile; nội dung văn hóa có nguồn/người đối chiếu; bằng chứng CI/Docker, thiết bị Mobile và demo online. Không đánh dấu toàn đồ án hoàn tất khi còn cổng chưa kiểm chứng. Ma trận hiện hành: `docs/acceptance/traceability.md`; báo cáo: `docs/acceptance/README.md`.
+
+T207/T208: bổ sung bản đối chiếu nguồn chờ duyệt và quy trình thử Android/Expo Go theo trả lời mới của người dùng. Chỉ thay tài liệu trong hai task này; dữ liệu runtime vẫn unverified và demo online chưa có.
+
 Liên kết wireframe ↔ module ↔ tính năng ↔ kiểm thử. Wireframe: docs/wireframes/Vietnamese_for_Real_Life_Wireframes.pdf
 
 | Màn hình wireframe | Thuộc | Tính năng (Đặc tả) | Ưu tiên | Kiểm thử chính |
