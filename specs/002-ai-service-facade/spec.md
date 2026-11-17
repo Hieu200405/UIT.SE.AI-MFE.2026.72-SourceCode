@@ -1,5 +1,9 @@
 # 002 – AI Service Facade & Contract v0.2 – spec
 
+## T215
+Output thành công ở transport nhưng không có lời thoại được phục hồi tối đa một lần qua cùng provider/limiter/budget; output UI/translation của lần rỗng không xuất hiện hoặc commit. Không tự retry HTTP/429/network.
+Lượt chỉ hoàn tất khi provider xác nhận kết thúc thành công. EOF bất ngờ, content_filter/tool_calls ngoài protocol và lỗi giữa stream không commit. Mỗi lời gọi có idle timeout và deadline tổng 60s mặc định. Các lựa chọn UI đã gửi được giữ dưới dạng dữ liệu user trong cửa sổ lịch sử bounded, không phải chỉ dẫn system; đây không phải bộ nhớ dài hạn vô hạn.
+
 ## Mục đích
 Điểm truy cập duy nhất tới LLM/rule engine/store cho web và mobile. Contract nằm ở packages/shared-types (nguồn sự thật).
 

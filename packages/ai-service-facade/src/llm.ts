@@ -1,7 +1,6 @@
-import { SseParser } from '@app/shared-types';
 
 /** Adapter cho API chuẩn OpenAI (`/chat/completions`, stream). Groq, Cerebras, OpenRouter, Mistral, Gemini (endpoint tương thích)… đều dùng được: đổi nhà cung cấp = đổi biến môi trường. */
-export interface LlmConfig { baseUrl: string; apiKey: string; model: string; timeoutMs?: number; temperature?: number; maxTokens?: number }
+export interface LlmConfig { baseUrl: string; apiKey: string; model: string; timeoutMs?: number; totalTimeoutMs?: number; temperature?: number; maxTokens?: number }
 export interface LlmMessage { role: 'system' | 'user' | 'assistant'; content: string }
 
 export class LlmError extends Error {
@@ -12,6 +11,7 @@ export class LlmError extends Error {
     if (this.code === 'daily_budget') return 'The configured daily AI budget has been reached';
     if (this.code === 'rate_limit' || this.status === 429) return 'Too many AI requests. Please wait a minute before retrying';
     if (this.code === 'truncated') return 'The AI reply was cut short. Please retry';
+    if (this.code === 'interrupted') return 'The AI connection ended before the reply was complete. Please retry';
     if (this.code === 'invalid_ui') return 'The interactive reply was incomplete. Please retry or answer in chat';
     if (this.code === 'empty') return 'The AI returned no dialogue. Please retry';
     if (this.code === 'timeout') return 'The AI took too long to respond. Please retry';
@@ -23,10 +23,13 @@ export class LlmError extends Error {
 const joinUrl = (base: string, path: string) => base.replace(/\/+$/, '') + path;
 
 export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], signal?: AbortSignal, fetchImpl: typeof fetch = fetch): AsyncGenerator<string> {
+  if (signal?.aborted) return;
   const ac = new AbortController();
   const onAbort = () => ac.abort();
   signal?.addEventListener('abort', onAbort);
   let timedOut = false; let timer: ReturnType<typeof setTimeout> | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const deadline = setTimeout(() => { timedOut = true; ac.abort(); }, cfg.totalTimeoutMs ?? 60_000);
   const arm = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ac.abort(); }, cfg.timeoutMs ?? 20_000); };
   arm();
   try {
@@ -44,23 +47,43 @@ export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], 
       void res.body?.cancel().catch(() => {});
       throw new LlmError(`http_${res.status}`, res.status === 429 || res.status >= 500, res.status);
     }
-    const reader = res.body.getReader(); const dec = new TextDecoder(); const parser = new SseParser();
+    reader = res.body.getReader(); const dec = new TextDecoder();
+    let wire = '';
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       arm();
-      for (const obj of parser.push(dec.decode(value, { stream: true }))) { // "[DONE]" không phải JSON nên bị bỏ qua
-        const finish = (obj as { choices?: Array<{ finish_reason?: string }> }).choices?.[0]?.finish_reason;
+      wire += dec.decode(value, { stream: true });
+      // Normalize only after joining chunks: CR and LF may arrive separately.
+      wire = wire.replace(/\r\n/g, '\n');
+      let boundary: number;
+      while ((boundary = wire.indexOf('\n\n')) >= 0) {
+        const block = wire.slice(0, boundary); wire = wire.slice(boundary + 2);
+        const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+        if (!data) continue;
+        if (data === '[DONE]') return;
+        let obj: { error?: unknown; choices?: Array<{ finish_reason?: string; delta?: { content?: unknown } }> };
+        try { obj = JSON.parse(data); } catch { throw new LlmError('interrupted', true); }
+        if (!obj || typeof obj !== 'object' || obj.error) throw new LlmError('interrupted', true);
+        const finish = obj.choices?.[0]?.finish_reason;
         if (finish === 'length') throw new LlmError('truncated', true);
-        const delta = (obj as { choices?: Array<{ delta?: { content?: unknown } }> }).choices?.[0]?.delta?.content;
+        if (finish && finish !== 'stop') throw new LlmError('interrupted', true);
+        const delta = obj.choices?.[0]?.delta?.content;
         if (typeof delta === 'string' && delta) yield delta;
+        if (finish === 'stop') return;
       }
+      if (wire.length > 131072) throw new LlmError('interrupted', true);
     }
+    throw new LlmError('interrupted', true);
   } catch (e) {
     if (e instanceof LlmError) throw e;
     if (signal?.aborted) return;                                   // client đã hủy: kết thúc êm
     throw new LlmError(timedOut ? 'timeout' : 'network', true);
-  } finally { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
+  } finally {
+    clearTimeout(timer); clearTimeout(deadline); signal?.removeEventListener('abort', onAbort);
+    ac.abort();
+    if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  }
 }
 
 /** Giới hạn số request/phút (free tier có hạn mức RPM). */

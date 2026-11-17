@@ -35,7 +35,7 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
   try {
     if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429);
     if (!(opts.budget?.tryReserve(chars + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
-    const parser = new ReplyParser(); let userEn = ''; let vi = ''; let ui = ''; let uiTooLarge = false; let lastUiPulse = Date.now();
+    let parser = new ReplyParser(); let userEn = ''; let vi = ''; let ui = ''; let uiTooLarge = false; let lastUiPulse = Date.now();
     const flushUserEn = function* (): Generator<PlanStep> {
       if (userEn.trim() && req.kind === 'message' && !req.interaction) yield step({ type: 'user_translation', requestId: rid, translation: userEn.trim() });
       userEn = '';
@@ -57,9 +57,25 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
         else yield step({ type: 'text_delta', requestId: rid, partId: 'p1', text: '', translation: p.text });
       }
     };
-    for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, messages, signal, opts.fetchImpl)) yield* handle(parser.push(delta));
-    yield* handle(parser.end());
-    yield* flushUserEn();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const attemptMessages = attempt ? [...messages, { role: 'user' as const, content: 'The previous generation contained no spoken reply. Answer the last learner message or submitted choices now. Begin with <vi>one short Vietnamese in-character reply</vi><en>its English translation</en>. Only then optionally append a valid <ui> block. Do not output UI alone.' }] : messages;
+      if (attempt) {
+        if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429);
+        if (!(opts.budget?.tryReserve(attemptMessages.reduce((sum, m) => sum + m.content.length, 0) + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
+        parser = new ReplyParser(); userEn = ''; vi = ''; ui = ''; uiTooLarge = false;
+      }
+      let pending: PlanStep[] = [];
+      const emit = function* (pieces: ReturnType<ReplyParser['push']>): Generator<PlanStep> {
+        for (const event of handle(pieces)) {
+          if (vi.trim()) { yield* pending; pending = []; yield event; }
+          else pending.push(event);
+        }
+      };
+      for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, attemptMessages, signal, opts.fetchImpl)) yield* emit(parser.push(delta));
+      yield* emit(parser.end());
+      if (signal?.aborted) return;
+      if (vi.trim()) { yield* flushUserEn(); break; }
+    }
     if (signal?.aborted) return;
     if (!vi.trim()) throw new LlmError('empty', true);
     const note = pickCulturalNote(ctx.scenario.id, [req.interaction ? '' : msg, vi], ctx.notesShown);

@@ -56,7 +56,7 @@ export function recordTurn(u: UserRecord, scenarioId: string, corrections: numbe
   if (!cur) { startSession(u, scenarioId, now); cur = u.sessions[u.sessions.length - 1]; }
   cur.turns += 1; cur.addressingErrors += corrections;
 }
-export function pushHistory(u: UserRecord, scenarioId: string, items: HistoryItem[], max = 12) {
+export function pushHistory(u: UserRecord, scenarioId: string, items: HistoryItem[], max = 48) {
   u.history[scenarioId] = [...(u.history[scenarioId] ?? []), ...items].slice(-max);
 }
 

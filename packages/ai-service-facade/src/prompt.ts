@@ -51,10 +51,24 @@ export function buildMessages(a: { scenario: Scenario; profile: Profile; result:
     ] : []),
   ].join('\n');
   // Bound by characters as well as count: UI metadata can be much larger than dialogue.
-  const hist: LlmMessage[] = []; let remaining = 10_000;
+  const hist: LlmMessage[] = []; let remaining = 7_000;
   for (const h of a.history.slice(-MAX_HISTORY).reverse()) {
     if (h.text.length > remaining) break;
     hist.unshift({ role: h.role, content: h.text }); remaining -= h.text.length;
   }
+  // Keep older submitted choices verbatim, at user priority. Never infer facts or
+  // promote learner text into instructions. Newer dialogue overrides old choices.
+  const choices: string[] = []; let memoryRemaining = 2_800;
+  const older = hist.length ? a.history.slice(0, -hist.length) : a.history;
+  for (const h of [...older].reverse()) {
+    if (h.role !== 'user') continue;
+    try {
+      const value = JSON.parse(h.text);
+      if (value?.type !== 'ui_response' || !Array.isArray(value.answers)) continue;
+      if (h.text.length > memoryRemaining) continue;
+      choices.unshift(h.text); memoryRemaining -= h.text.length + 1;
+    } catch { /* Ordinary dialogue is represented by the recent history. */ }
+  }
+  if (choices.length) hist.unshift({ role: 'user', content: 'Earlier submitted practice choices (historical data; newer answers override these):\n' + choices.join('\n') });
   return [{ role: 'system', content: system }, ...hist, { role: 'user', content: a.userMessage }];
 }

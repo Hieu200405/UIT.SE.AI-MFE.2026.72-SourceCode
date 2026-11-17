@@ -1,5 +1,9 @@
 # Facade — Plan nghiệm thu
 
+## T215
+Output không có lời thoại: buffer các event dịch/UI cho tới khi có vi; nếu EOF thành công nhưng vi rỗng, bỏ toàn bộ parser state và gọi lại đúng một lần với chỉ dẫn format, vẫn tính limiter/budget. Không retry transport/HTTP, không gửi lại lời thoại đã xuất hiện. Schema repair vẫn tối đa một lần riêng.
+Parse terminal SSE [DONE]/finish_reason stop, xử lý CRLF qua ranh giới chunk; hủy reader trong finally. Deadline tổng độc lập idle timer, không bị heartbeat kéo dài. Store giữ tối đa 48 tin; prompt giữ 6 tin gần nhất trong 7000 ký tự và tối đa 3000 ký tự lựa chọn UI cũ, nguyên bản, mới nhất trước khi giới hạn, không tóm tắt bằng LLM hoặc suy ra lựa chọn. Bổ sung regression cho ngắt luồng/abort/deadline và lựa chọn cũ.
+
 Giữ contract v0.5, HTTP/SSE qua facade-client, rule-first, SQLite tùy cấu hình. T205 ghi lại endpoint thực tế và thay đổi so với tài liệu Word v0.1 trong docs/acceptance/api-contract.md.
 
 T206: validator là cổng vào dữ liệu UI; kiểm tra cả suggestedTerms.call/self, regionalNote, assumptions và options. Dữ liệu sai trả null/false; không ép kiểu hay suy đoán dữ liệu. Regression test mô phỏng giá trị object, number, null và mảng sai kiểu trước khi vào renderer.

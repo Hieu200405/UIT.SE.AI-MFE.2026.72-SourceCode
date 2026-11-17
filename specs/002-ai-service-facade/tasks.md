@@ -1,5 +1,13 @@
 # Facade — Tasks nghiệm thu
 
+## T215 — Ổn định hội thoại Agent (user giao 2026-11-17)
+- Files: specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/ai-service-facade/src/{llm,prompt,store,engine}.ts; packages/ai-service-facade/test/llm.test.ts; docs/acceptance/agent-stability.md.
+- AC: ngắt SSE không có terminal không được done/commit; stream có heartbeat vẫn hết hạn tổng; abort trước request không gọi provider; dọn reader khi lỗi/hủy; lựa chọn UI đã commit còn trong context sau hơn 6 tin, bounded và không nâng thành system instruction; reset phiên xóa lịch sử; build/lint/typecheck/test pass. Kiểm chứng LLM thật nếu môi trường sẵn sàng, ghi rõ giới hạn.
+- Không thêm dependency, không đọc secret, không đổi registry/quy tắc văn hóa, không tự retry 429 hoặc thay provider bằng mock.
+- Branch: codex/t215-agent-stability. Trạng thái: đang triển khai.
+- Bổ sung sau live test: provider trả UI nhưng không có vi sau submit; cho phép đúng một lần phục hồi empty qua cùng provider, cùng limiter/budget. Không hiển thị UI/translation của output rỗng, không retry HTTP/429, lỗi cả hai lần không commit. Thêm regression tương ứng.
+- Kết quả: triển khai xong đợt sửa; npm test 167/167, LLM 42/42, E2E cuối 27/27, build/lint/typecheck pass. Live Groq sinh UI/submit và 4 followups, sau đó network; chưa nghiệm thu 10 followups. Bằng chứng/giới hạn: docs/acceptance/agent-stability.md. Chưa commit/push/PR.
+
 T205 và T206: Files/AC tại `../000-master/tasks.md`. T206 hiện thực yêu cầu FR-1, Constitution #11 và Chat AC-4; không thay đổi schema hợp lệ hoặc thêm loại thẻ.
 T209: xem Files/AC và trạng thái tại ../003-chat-remote/tasks.md.
 T210: Files/AC tại ../003-chat-remote/tasks.md; thay biểu mẫu cố định T209.

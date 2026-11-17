@@ -9,6 +9,7 @@ import type { Scenario, StreamEvent } from '@app/shared-types';
 import { createFacadeClient } from '@app/facade-client';
 import { createFacade } from '../src/server.ts';
 import { SqliteStore } from '../src/sqlite-store.ts';
+import { newUser, pushHistory, startSession, Store } from '../src/store.ts';
 import { DailyBudget, LlmError, RateLimiter, streamCompletion } from '../src/llm.ts';
 import { ReplyParser } from '../src/reply-parser.ts';
 import { agentTerms, buildMessages } from '../src/prompt.ts';
@@ -19,6 +20,66 @@ import { loadRules } from '../../rules-xung-ho/src/load-node.ts';
 const scenarios: Scenario[] = JSON.parse(readFileSync(new URL('../data/scenarios.json', import.meta.url), 'utf-8')).scenarios;
 const rules = loadRules();
 const renting = scenarios.find((s) => s.id === 'renting')!;
+
+test('T215: old submitted UI choices survive 14 turns, stay bounded/user-scoped and reset with session', () => {
+  const u = newUser();
+  const choice = JSON.stringify({ type: 'ui_response', question: 'Spice', answers: [{ field: 'spice', question: 'How spicy?', value: 'Không cay' }] });
+  pushHistory(u, 'renting', [{ role: 'user', text: choice }]);
+  for (let i = 0; i < 14; i++) pushHistory(u, 'renting', [{ role: 'user', text: `turn ${i}` }, { role: 'assistant', text: `reply ${i}` }]);
+  const result = resolveAddressTerms({ learner: { age: 28 }, counterpart: { gender: 'male', ageRange: 'over50' }, relationship: 'landlord' }, rules);
+  const m = buildMessages({ scenario: renting, profile: u.profile, result, history: u.history.renting, userMessage: 'Continue', interactive: true });
+  assert.ok(m.some((x) => x.role === 'user' && x.content.includes('Không cay')));
+  assert.ok(!m[0].content.includes('Không cay'));
+  assert.ok(m.slice(1, -1).reduce((sum, x) => sum + x.content.length, 0) <= 10000);
+  assert.equal(m.at(-2)?.content, 'reply 13');
+  for (let i = 0; i < 100; i++) pushHistory(u, 'renting', [{ role: 'user', text: choice }]);
+  assert.equal(u.history.renting.length, 48);
+  const bounded = buildMessages({ scenario: renting, profile: u.profile, result, history: u.history.renting, userMessage: 'Continue' });
+  assert.ok(bounded.slice(1, -1).reduce((sum, x) => sum + x.content.length, 0) <= 10000);
+  startSession(u, 'renting'); assert.deepEqual(u.history.renting, []);
+});
+
+test('T215: pre-aborted request never contacts provider', async () => {
+  const ac = new AbortController(); ac.abort(); let called = false;
+  for await (const _ of streamCompletion({ baseUrl: 'https://fixture.invalid', apiKey: 'test', model: 'test' }, [], ac.signal, async () => { called = true; return new Response(); })) {}
+  assert.equal(called, false);
+});
+
+test('T215: terminal split across CRLF chunks stops and cancels an otherwise open stream', async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({ start(c) {
+    for (const s of ['data: {"choices":[{"delta":{"content":"hello"}}]}\r', '\n\r', '\ndata: [DO', 'NE]\r', '\n\r', '\n']) c.enqueue(new TextEncoder().encode(s));
+  }, cancel() { cancelled = true; } });
+  let text = '';
+  for await (const x of streamCompletion({ baseUrl: 'https://fixture.invalid', apiKey: 'test', model: 'test' }, [], undefined, async () => new Response(stream))) text += x;
+  assert.equal(text, 'hello'); assert.equal(cancelled, true);
+});
+
+test('T215: total deadline expires despite continuous heartbeat traffic', async () => {
+  let interval: ReturnType<typeof setInterval>;
+  const fetcher: typeof fetch = async (_url, init) => new Response(new ReadableStream<Uint8Array>({ start(c) {
+    interval = setInterval(() => c.enqueue(new TextEncoder().encode(': heartbeat\n\n')), 10);
+    init?.signal?.addEventListener('abort', () => { clearInterval(interval); c.error(new Error('aborted')); }, { once: true });
+  }, cancel() { clearInterval(interval); } }));
+  const before = Date.now();
+  await assert.rejects(async () => {
+    for await (const _ of streamCompletion({ baseUrl: 'https://fixture.invalid', apiKey: 'test', model: 'test', timeoutMs: 1000, totalTimeoutMs: 80 }, [], undefined, fetcher)) {}
+  }, (e: any) => e.code === 'timeout');
+  assert.ok(Date.now() - before < 1500);
+});
+
+test('T215: unexpected EOF and provider stream errors never commit history, UI or progress', async () => {
+  for (const suffix of ['', 'data: {"error":{"message":"private details"}}\n\n', 'data: {"choices":[{"finish_reason":"content_filter"}]}\n\n']) {
+    class ObservedStore extends Store { last = newUser(); override get(id: string) { this.last = super.get(id); return this.last; } }
+    const store = new ObservedStore();
+    const { client } = await start({ store, engine: { fetchImpl: async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: uiReply(generated()) } }] })}\n\n${suffix}`) } });
+    const r = await run(client, { ...msg('Choose a dish'), interactive: true });
+    assert.equal(r.outcome, 'error'); assert.ok(!r.events.some((e) => e.type === 'done'));
+    assert.equal((await client.getProgress()).totals.turns, 0);
+    assert.deepEqual(store.last.history, {}); assert.deepEqual(store.last.activeForms, {});
+    assert.ok(!JSON.stringify(r.events).includes('private details'));
+  }
+});
 
 // ------------------------------------------------------------------ ReplyParser
 const feed = (text: string, size: number) => { const p = new ReplyParser(); const out: Array<[string, string]> = []; const add = (ps: any[]) => ps.forEach((x) => out.push([x.section, x.text]));
@@ -188,10 +249,11 @@ test('client hủy giữa chừng → lời gọi LLM bị hủy theo, không t�
   assert.equal(await p, 'aborted'); await new Promise((r) => setTimeout(r, 200));
   assert.ok(fake.closed >= 1, 'kết nối tới LLM phải đóng'); assert.equal((await client.getProgress()).totals.turns, 0);
 });
-test('LLM lệch định dạng: không có thẻ → vẫn hiển thị như tiếng Việt; JSON hỏng giữa luồng bị bỏ qua', async () => {
+test('LLM lệch định dạng: plain text hợp lệ; JSON hỏng giữa luồng không được commit', async () => {
   reset('plain'); let c = (await start()).client; let r = await run(c, msg('Bác ơi, giá ạ?'));
   assert.equal(viText(r.events), 'Dạ, bác nghe đây.'); assert.equal(r.outcome, 'done'); assert.ok(!r.events.some((e) => e.type === 'user_translation'));
-  reset('garbled'); c = (await start()).client; r = await run(c, msg('Bác ơi, giá ạ?')); assert.equal(r.outcome, 'done');
+  reset('garbled'); c = (await start()).client; r = await run(c, msg('Bác ơi, giá ạ?')); assert.equal(r.outcome, 'error');
+  assert.equal((await c.getProgress()).totals.turns, 0);
 });
 test('/health: báo chế độ, không chứa khóa; CORS theo CORS_ORIGIN', async () => {
   reset(); const { base } = await start({ corsOrigin: 'https://app.example.com' });
@@ -358,7 +420,7 @@ test('long conversation retains valid UI and the latest answer with bounded cont
     assert.equal(r.outcome, 'done'); form = formFrom(r.events);
     assert.equal(form.title, `Decision ${i}`);
     const messages = fake.requests.at(-1)!.body.messages;
-    assert.ok(messages.length <= 8);
+    assert.ok(messages.length <= 9);
     assert.ok(messages.slice(1, -1).reduce((n: number, m: any) => n + m.content.length, 0) <= 10_000);
     if (i) assert.ok(messages.at(-1).content.includes('Phở'));
   }
@@ -408,4 +470,34 @@ test('Groq GPT-OSS uses documented completion budget and low reasoning; other pr
     if (baseUrl.includes('api.groq.com')) { assert.equal(body.max_completion_tokens, 2400); assert.equal(body.reasoning_effort, 'low'); assert.equal(body.include_reasoning, false); assert.equal(body.max_tokens, undefined); }
     else { assert.equal(body.max_tokens, 2400); assert.equal(body.reasoning_effort, undefined); }
   }
+});
+
+test('T215: UI-only output recovers once without leaking abandoned translation/UI', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { fetchImpl: async () => {
+    const content = ++calls === 1 ? `<en>Abandoned translation</en><ui>${JSON.stringify(generated('Abandoned UI'))}</ui>` : uiReply(generated('Recovered UI'));
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`);
+  } } });
+  const r = await run(client, { ...msg('Help choose'), interactive: true });
+  assert.equal(calls, 2); assert.equal(r.outcome, 'done');
+  assert.equal(formFrom(r.events).title, 'Recovered UI');
+  assert.ok(!JSON.stringify(r.events).includes('Abandoned'));
+  assert.equal(r.events.filter((e) => e.type === 'done').length, 1);
+  assert.equal((await client.getProgress()).totals.turns, 1);
+});
+
+test('T215: repeated empty output stops after two calls and commits nothing', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { fetchImpl: async () => { calls++; return new Response('data: [DONE]\n\n'); } } });
+  const r = await run(client, { ...msg('Help choose'), interactive: true });
+  assert.equal(calls, 2); assert.equal(r.outcome, 'error');
+  assert.equal((await client.getProgress()).totals.turns, 0);
+});
+
+test('T215: empty recovery obeys rate limiter without a second provider call', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { limiter: new RateLimiter(1), fetchImpl: async () => { calls++; return new Response('data: [DONE]\n\n'); } } });
+  const r = await run(client, { ...msg('Help choose'), interactive: true });
+  assert.equal(calls, 1); assert.equal(r.outcome, 'error');
+  assert.ok(JSON.stringify(r.events).includes('Too many AI requests'));
 });
