@@ -7,7 +7,8 @@ FROM node:22-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages ./packages
-RUN npm ci
+# Match the resolver mode used to create the committed lockfile and in CI.
+RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run poc:build
 

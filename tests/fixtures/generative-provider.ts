@@ -6,15 +6,16 @@ import { loadRules } from '../../packages/rules-xung-ho/src/load-node.ts';
 
 const form = (title: string, description: string, fields: unknown[]) => ({ title, description, submitLabel: 'Continue', fields });
 const dish = form('What would you like to order?', 'Choose a dish for our conversation.', [
-  { id: 'meal', label: 'Dish', kind: 'choice', required: true, options: ['Phở', 'Bún'] },
+  { id: 'meal', label: 'Dish', kind: 'choice', required: true, options: ['Phở', 'Bún'], presentation: 'cards', optionDetails: [{ option: 'Phở', description: 'Rice noodles in a warm broth', badge: 'Warm bowl', icon: 'bowl' }, { option: 'Bún', description: 'Thin rice noodles with fresh herbs', badge: 'Fresh herbs', icon: 'basket' }] },
   { id: 'preference', label: 'Anything else?', kind: 'text', required: false },
 ]);
-const spice = form('How spicy?', 'Let’s adapt the order to your preference.', [
+const spiceBase = form('How spicy?', 'Let’s adapt the order to your preference.', [
   { id: 'heat', label: 'Spice level', kind: 'select', required: true, options: ['Not spicy', 'A little spicy'] },
   { id: 'phrase', label: 'Try saying your order', kind: 'textarea', required: false },
 ]);
+const spice = { ...spiceBase, summary: [{ label: 'Practice order', value: 'Your selected noodles' }] };
 const room = form('What matters in your room?', 'Tell me what you need before we practice asking the landlord.', [
-  { id: 'priority', label: 'Your priority', kind: 'choice', required: true, options: ['Quiet', 'Near transport'] },
+  { id: 'priority', label: 'Your priority', kind: 'choice', required: true, options: ['Quiet', 'Near transport'], presentation: 'compact' },
 ]);
 const text = (vi: string, en: string, ui: unknown = null) => `<vi>${vi}</vi><en>${en}</en><ui>${JSON.stringify(ui)}</ui>`;
 const scenarios = JSON.parse(readFileSync(new URL('../../packages/ai-service-facade/data/scenarios.json', import.meta.url), 'utf8')).scenarios;

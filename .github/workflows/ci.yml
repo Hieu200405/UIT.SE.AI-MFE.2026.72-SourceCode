@@ -1,5 +1,7 @@
 name: ci
-on: [pull_request]
+on:
+  pull_request:
+  workflow_dispatch:
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -7,7 +9,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
-      - run: npm ci
+      # Lockfiles were created with legacy-peer-deps enabled locally.
+      # Keep npm ci strict about the lockfile, using the same resolver mode.
+      - run: npm ci --legacy-peer-deps
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test                      # xưng hô (Lớp 1, không LLM) + contract + Facade (mock + LLM giả) + reducer + CSS + cấu hình + Docker (nhất quán)
@@ -15,6 +19,14 @@ jobs:
       - run: npm run test:images           # dựng lại cấu trúc từng image trong thư mục tạm và chạy thử
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
       - run: npm audit --audit-level=high
       # TODO: gitleaks (quét secret) + kiểm tra phạm vi task (Setup §8.1)
 
@@ -44,7 +56,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: apps/mobile/package-lock.json }
-      - run: npm ci
+      # Lockfiles were created with legacy-peer-deps enabled locally.
+      # Keep npm ci strict about the lockfile, using the same resolver mode.
+      - run: npm ci --legacy-peer-deps
         working-directory: apps/mobile
       - run: npm run typecheck && npm test
         working-directory: apps/mobile

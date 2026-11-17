@@ -69,3 +69,6 @@ Sinh UI do LLM quyết định ở open/message của web opt-in, không catalog
 
 ## T211
 Nghiệm thu thật phải xác nhận health mode llm, không fallback mock; browser thao tác qua Facade thật. Không đọc/ghi .env hoặc secret trong phiên agent; người dùng nhập khóa qua secure prompt tại máy.
+
+## T213
+WHAT: phân biệt lỗi dịch vụ/quota/token cắt/UI hỏng; lượt lỗi không commit form/history; giữ UI tùy chọn theo hội thoại. Lời nhân vật đời thường, không lịch sự rập khuôn; xưng hô giữ rule-first. Lịch sử đưa vào model có giới hạn dung lượng.

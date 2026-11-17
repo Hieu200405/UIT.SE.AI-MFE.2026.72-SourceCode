@@ -119,3 +119,16 @@ test('generated form schema limits UI and rejects executable or ambiguous metada
     { ...data, fields: [{ ...data.fields[0], kind: 'text' }] },
   ]) assert.equal(validateUICard({ type: 'scenario_form', data: invalid }), false);
 });
+
+test('rich UI metadata is bounded, optional and cannot inject assets or arbitrary props', () => {
+  const data = { formId: 'rich', title: 'Compare', description: 'Choose a practice option', submitLabel: 'Choose', summary: [{ label: 'Dish', value: 'Phở' }], fields: [{ id: 'dish', label: 'Dish', kind: 'choice', required: true, options: ['Phở', 'Bún'], presentation: 'cards', optionDetails: [{ option: 'Phở', description: 'Noodles in broth', icon: 'bowl', badge: 'Warm' }] }] };
+  assert.ok(validateUICard({ type: 'scenario_form', data }));
+  for (const fields of [
+    [{ ...data.fields[0], presentation: 'html' }],
+    [{ ...data.fields[0], optionDetails: [{ option: 'Unknown', description: 'bad' }] }],
+    [{ ...data.fields[0], optionDetails: [{ option: 'Phở', description: 'bad', imageUrl: 'https://x' }] }],
+    [{ ...data.fields[0], optionDetails: [{ option: 'Phở', description: 'bad', icon: '<svg>' }] }],
+    [{ ...data.fields[0], optionDetails: [{ option: 'Phở', description: 'x'.repeat(181) }] }],
+  ]) assert.equal(validateUICard({ type: 'scenario_form', data: { ...data, fields } }), false);
+  assert.equal(validateUICard({ type: 'scenario_form', data: { ...data, summary: [{ label: 'x', value: {} }] } }), false);
+});

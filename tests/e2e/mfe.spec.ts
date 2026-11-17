@@ -332,6 +332,7 @@ test.describe('Generative Agent UI (real Facade, deterministic test provider)', 
     await lastAgentDone(page);
     const form = page.getByTestId('scenario-form').last();
     await expect(form).toContainText('What would you like to order?');
+    await expect(form).toContainText('Rice noodles in a warm broth');
     await form.getByRole('radio', { name: 'Phở', exact: true }).check();
     await form.getByLabel('Anything else?').fill('Vegetables please');
     await form.screenshot({ path: 'test-results/generative-ui-narrow.png' });
@@ -342,6 +343,7 @@ test.describe('Generative Agent UI (real Facade, deterministic test provider)', 
     await expect(page.getByTestId('scenario-form').first().getByRole('radio')).toHaveCount(0);
     const next = page.getByTestId('scenario-form').last();
     await expect(next).toContainText('How spicy?');
+    await expect(next).toContainText('So far in our conversation');
     await next.getByLabel('Spice level').selectOption('Not spicy');
     await next.getByLabel('Try saying your order').fill('Không cay ạ.');
     await next.getByRole('button', { name: 'Continue' }).click();
@@ -382,6 +384,7 @@ test.describe('Generative Agent UI (real Facade, deterministic test provider)', 
     await expect(page.getByTestId('scenario-form')).toHaveCount(0);
     await say(page, 'invalid ui'); await lastAgentDone(page);
     await expect(page.getByTestId('agent-text').filter({ hasText: 'interactive question could not be displayed' })).toBeVisible();
+    await expect(page.getByTestId('chat-error').getByRole('button', { name: 'Retry' })).toBeVisible();
     await expect(page.getByTestId('scenario-form')).toHaveCount(0);
     await say(page, 'noodles'); await lastAgentDone(page);
     const option = page.getByRole('radio', { name: 'Phở', exact: true });
@@ -394,7 +397,10 @@ test.describe('Generative Agent UI (real Facade, deterministic test provider)', 
   test('replaced questions collapse honestly; receipts expand; reduced motion and narrow layout', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(url); await pick(page, 'street_food'); await lastAgentDone(page);
+    await page.goto(url);
+    await expect(page.getByRole('img', { name: 'Illustrated Vietnamese street with tiled roofs, a phở stall, a café and a bicycle' })).toBeVisible();
+    await page.screenshot({ path: 'test-results/vietnam-practice.png', fullPage: true });
+    await pick(page, 'street_food'); await lastAgentDone(page);
     await say(page, 'noodles'); await lastAgentDone(page);
     await say(page, 'Help me find a room'); await lastAgentDone(page);
     const receipt = page.getByTestId('scenario-form').first();

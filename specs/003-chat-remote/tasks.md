@@ -49,3 +49,12 @@ T209 đã triển khai và kiểm chứng local. Bằng chứng, giới hạn mo
 - Trạng thái: đang triển khai. Giữ nguyên contract/prompt và Facade đã kiểm chứng LLM thật.
 
 T212 hoàn tất: build 4 apps, lint/CSS 8 ca, typecheck và E2E 27/27 pass. Sau chỉnh composer mobile và biểu tượng, build/lint/typecheck và 5/5 bài Generative Agent UI pass lại; đã xem ảnh desktop/mobile. Bằng chứng và giới hạn ở docs/acceptance/agent-ui-polish.md. Chưa commit/PR; không gọi lại Gemini trong lượt này.
+
+## T213 — Agent đáng tin cậy và giao diện Việt Nam
+- User giao 2026-11-16; Agent Codex; branch codex/t213-agent-quality; kế thừa quyền cập nhật spec/plan/tasks đã duyệt. Nguồn quy trình: Setup AI Agent Assistant.docx mục 2,5,6,7,8.
+- Files: specs/003-chat-remote/{spec,plan,tasks}.md; specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/shared-types/{src/index.ts,test/contract.test.ts}; packages/ai-service-facade/src/{prompt,engine,llm,server,interactive,reply-parser}.ts; packages/ai-service-facade/test/llm.test.ts; apps/chat-remote/src/ui/{ScenarioForm,PracticeScreen,Sidebar,ChatScreen,VietnamScene}.tsx; apps/chat-remote/src/styles.css; tests/fixtures/generative-provider.ts; tests/e2e/mfe.spec.ts; scripts/verify-live-ui.cjs; docs/acceptance/agent-quality.md.
+- AC: theo spec T213; test schema metadata sai/đúng; stream length và lỗi quota phân biệt; heartbeat không commit dữ liệu/hủy timer; history bounded; test hội thoại 12+ lượt; xưng hô, build/lint/typecheck/unit/E2E pass; xem ảnh desktop/mobile; LLM thật kiểm tra lời thoại/UI khi có provider.
+- Analyze: 4 yêu cầu user đều ánh xạ vào UI contract, Facade, prompt, visual. Không dependency mới, không import Remote chéo, không đổi Constitution hay data rules; registry mở rộng trong scenario_form đã được user duyệt. Không merge/commit thay người dùng; ghi giới hạn nội dung cần review.
+- Trạng thái: đang triển khai.
+
+T213: triển khai và kiểm thử code hoàn tất; build/lint/web+mobile typecheck pass, E2E cuối 27/27, LLM 34/34, contract 19/19, xưng hô 20/20. Groq thật đã sinh rich UI và phản hồi dùng selection; nghiệm thu hội thoại dài CÒN MỞ do empty output/http_429, không đánh dấu toàn task nghiệm thu xong. Bằng chứng/giới hạn: docs/acceptance/agent-quality.md.
