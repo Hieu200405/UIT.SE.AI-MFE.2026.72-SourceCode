@@ -90,6 +90,10 @@ export function createFacade(opts: FacadeOptions): http.Server {
 
         res.on('close', () => ac.abort());                        // client đóng/hủy → hủy cả lời gọi LLM
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...CORS });
+        // SSE comments reset transport idle timeout while the provider thinks; never fake UI/text.
+        const heartbeat = setInterval(() => { if (!ac.signal.aborted && !res.writableEnded) res.write(': keep-alive\n\n'); }, 4000);
+        const clearHeartbeat = () => clearInterval(heartbeat);
+        ac.signal.addEventListener('abort', clearHeartbeat, { once: true });
         const shown = new Set(user.notesShown[scenario.id] ?? []);
         const ctx = { scenario, profile: user.profile, turnIndex: user.turns[scenario.id] ?? 0, rules: opts.rules, devTriggers: !!opts.dev,
           history: user.history[scenario.id] ?? [], notesShown: shown };
@@ -110,7 +114,7 @@ export function createFacade(opts: FacadeOptions): http.Server {
               if (body.kind === 'message' && !body.interaction) recordTurn(user, scenario.id, corrections);
               if (generatedForm) user.activeForms[scenario.id] = generatedForm;
               else delete user.activeForms[scenario.id];
-              const uiContext = generatedForm ? { title: generatedForm.title, description: generatedForm.description, submitLabel: generatedForm.submitLabel, fields: generatedForm.fields } : null;
+              const uiContext = generatedForm ? { title: generatedForm.title, description: generatedForm.description, submitLabel: generatedForm.submitLabel, ...(generatedForm.summary ? { summary: generatedForm.summary } : {}), fields: generatedForm.fields } : null;
               const assistantText = replyText.trim() + (uiContext ? `\nInteractive question: ${JSON.stringify(uiContext)}` : '');
               if (body.kind === 'message' || body.interactive) pushHistory(user, scenario.id, [...(body.kind === 'message' ? [{ role: 'user' as const, text: input }] : []), { role: 'assistant', text: assistantText }]);
               user.notesShown[scenario.id] = [...shown]; store.save(id);
@@ -119,6 +123,7 @@ export function createFacade(opts: FacadeOptions): http.Server {
           }
           return void res.end();
         } finally {
+          clearHeartbeat(); ac.signal.removeEventListener('abort', clearHeartbeat);
           if (activeTurns.get(turnKey) === ac) activeTurns.delete(turnKey);
         }
       }

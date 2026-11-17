@@ -30,10 +30,11 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
 
   const messages = buildMessages({ scenario: ctx.scenario, profile: ctx.profile, result: a.result, history: ctx.history, userMessage: msg, interactive });
   const chars = messages.reduce((n, m) => n + m.content.length, 0);
-  const outputLimit = opts.llm.maxTokens ?? (interactive ? 1400 : 220);
+  const outputLimit = opts.llm.maxTokens ?? (interactive ? 2400 : 220);
   let started = false;
   try {
-    if (!(opts.limiter?.tryAcquire() ?? true) || !(opts.budget?.tryReserve(chars + outputLimit * 4) ?? true)) throw new LlmError('quota', true, 429);
+    if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429);
+    if (!(opts.budget?.tryReserve(chars + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
     const parser = new ReplyParser(); let userEn = ''; let vi = ''; let ui = ''; let uiTooLarge = false; let lastUiPulse = Date.now();
     const flushUserEn = function* (): Generator<PlanStep> {
       if (userEn.trim() && req.kind === 'message' && !req.interaction) yield step({ type: 'user_translation', requestId: rid, translation: userEn.trim() });
@@ -65,9 +66,29 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
     if (note) { ctx.notesShown.add(note.id); yield step({ type: 'ui_card', requestId: rid, card: { type: 'cultural_note', data: { ...note.note, verified: false } } }, 60); }
     if (interactive && parser.uiStarted > 0) {
       const complete = !uiTooLarge && parser.uiStarted === 1 && parser.uiCompleted === 1;
-      const form = complete ? parseGeneratedForm(ui) : null;
+      let form = complete ? parseGeneratedForm(ui) : null;
+      let intentionalNull = complete && ui.trim() === 'null';
+      if (!form && !intentionalNull && !uiTooLarge) {
+        // One bounded schema repair through the same provider, subject to the same budgets.
+        const repairMessages = [...messages,
+          { role: 'assistant' as const, content: `<vi>${vi}</vi><ui>${ui}</ui>` },
+          { role: 'user' as const, content: 'Your UI failed schema validation. Return ONLY a corrected JSON object matching the UI schema above, no tags or markdown. Keep the same question and choices. Use English labels. Use 1-5 fields, choice/select options must be strings. Omit optional metadata if uncertain. If no input is useful, return null. Do not repeat dialogue.' }];
+        const repairChars = repairMessages.reduce((n, m) => n + m.content.length, 0);
+        if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429);
+        if (!(opts.budget?.tryReserve(repairChars + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
+        let repaired = '';
+        for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, repairMessages, signal, opts.fetchImpl)) {
+          repaired += delta;
+          if (repaired.length > MAX_UI_CHARS) throw new LlmError('invalid_ui', true);
+        }
+        if (signal?.aborted) return;
+        form = parseGeneratedForm(repaired); intentionalNull = repaired.trim() === 'null';
+      }
       if (form) yield step({ type: 'ui_card', requestId: rid, card: { type: 'scenario_form', data: form } });
-      else if (!(complete && ui.trim() === 'null')) yield step({ type: 'text_delta', requestId: rid, partId: 'ui-fallback', text: 'The interactive question could not be displayed. You can answer in the chat instead.' });
+      else if (!intentionalNull) {
+        yield step({ type: 'text_delta', requestId: rid, partId: 'ui-fallback', text: 'The interactive question could not be displayed. You can answer in the chat instead.' });
+        throw new LlmError('invalid_ui', true);
+      }
     }
     yield step({ type: 'done', requestId: rid });
   } catch (err) {

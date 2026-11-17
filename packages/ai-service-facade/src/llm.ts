@@ -9,6 +9,12 @@ export class LlmError extends Error {
   constructor(code: string, retryable: boolean, status?: number) { super(code); this.code = code; this.retryable = retryable; this.status = status; }
   /** Thông điệp an toàn cho người dùng: không lộ chi tiết nhà cung cấp, khóa hay nội dung phản hồi. */
   publicMessage(): string {
+    if (this.code === 'daily_budget') return 'The configured daily AI budget has been reached';
+    if (this.code === 'rate_limit' || this.status === 429) return 'Too many AI requests. Please wait a minute before retrying';
+    if (this.code === 'truncated') return 'The AI reply was cut short. Please retry';
+    if (this.code === 'invalid_ui') return 'The interactive reply was incomplete. Please retry or answer in chat';
+    if (this.code === 'empty') return 'The AI returned no dialogue. Please retry';
+    if (this.code === 'timeout') return 'The AI took too long to respond. Please retry';
     if (this.status === 401 || this.status === 403) return 'The AI service isn’t set up correctly';
     return this.retryable ? 'The AI service is busy' : 'The AI service couldn’t answer';
   }
@@ -24,12 +30,14 @@ export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], 
   const arm = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ac.abort(); }, cfg.timeoutMs ?? 20_000); };
   arm();
   try {
+    const groqOss = new URL(cfg.baseUrl).hostname === 'api.groq.com' && ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'].includes(cfg.model);
+    const limits = groqOss ? { max_completion_tokens: cfg.maxTokens ?? 220, reasoning_effort: 'low', include_reasoning: false } : { max_tokens: cfg.maxTokens ?? 220 };
     let res: Response;
     try {
       res = await fetchImpl(joinUrl(cfg.baseUrl, '/chat/completions'), {
         method: 'POST', signal: ac.signal,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
-        body: JSON.stringify({ model: cfg.model, messages, stream: true, temperature: cfg.temperature ?? 0.7, max_tokens: cfg.maxTokens ?? 220 }),
+        body: JSON.stringify({ model: cfg.model, messages, stream: true, temperature: cfg.temperature ?? 0.7, ...limits }),
       });
     } catch { throw new LlmError(timedOut ? 'timeout' : 'network', true); }
     if (!res.ok || !res.body) {
@@ -42,6 +50,8 @@ export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], 
       if (done) break;
       arm();
       for (const obj of parser.push(dec.decode(value, { stream: true }))) { // "[DONE]" không phải JSON nên bị bỏ qua
+        const finish = (obj as { choices?: Array<{ finish_reason?: string }> }).choices?.[0]?.finish_reason;
+        if (finish === 'length') throw new LlmError('truncated', true);
         const delta = (obj as { choices?: Array<{ delta?: { content?: unknown } }> }).choices?.[0]?.delta?.content;
         if (typeof delta === 'string' && delta) yield delta;
       }

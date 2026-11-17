@@ -63,7 +63,7 @@ export function ChatScreen({ client, scenario, flags, idleTimeoutMs, onBack, onC
       <section className="chat:workspace chat:flex chat:min-w-0 chat:flex-1 chat:flex-col chat:gap-3 chat:p-3 chat:md:p-8">
         <div className="chat:mx-auto chat:flex chat:w-full chat:max-w-2xl chat:flex-1 chat:flex-col chat:gap-3">
           <div className="chat:workspace-header">
-            <div><div className="chat:workspace-label">Your practice space</div><h2 className="chat:workspace-title">A little practice. Real confidence.</h2></div>
+            <div><div className="chat:workspace-label">CHUYỆN TRÒ · LET’S TALK</div><h2 className="chat:workspace-title">A small conversation. A little closer.</h2></div>
             <p data-testid="agent-mode" className="chat:mode-pill">
               {mode === 'mock' ? 'Sample conversation · AI-generated questions unavailable' : mode === 'llm' ? 'Interactive practice · Guided by your conversation' : 'Your conversation, your pace'}
             </p>

@@ -4,14 +4,15 @@
  * reply suggestion có translation, needs_clarification, error có retryable.
  */
 
-export const CONTRACT_VERSION = '0.7.0';
+export const CONTRACT_VERSION = '0.8.0';
 
 export interface ScenarioFormData {
   formId: string;
   title: string;
   description: string;
   submitLabel: string;
-  fields: Array<{ id: string; label: string; kind: 'choice' | 'select' | 'text' | 'textarea'; required: boolean; options?: string[] }>;
+  summary?: Array<{ label: string; value: string }>;
+  fields: Array<{ id: string; label: string; kind: 'choice' | 'select' | 'text' | 'textarea'; required: boolean; options?: string[]; presentation?: 'cards' | 'compact'; optionDetails?: Array<{ option: string; description: string; badge?: string; icon?: 'bowl' | 'home' | 'basket' | 'bank' | 'speech' | 'document' }> }>;
 }
 export interface FormInteraction { formId: string; values: Record<string, string> }
 
@@ -81,13 +82,16 @@ const onlyKeys = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).
 
 /** Strict schema shared by the LLM boundary and renderer; no arbitrary props. */
 export function validateScenarioForm(v: unknown): v is ScenarioFormData {
-  if (!isObj(v) || !onlyKeys(v, ['formId', 'title', 'description', 'submitLabel', 'fields']) ||
+  if (!isObj(v) || !onlyKeys(v, ['formId', 'title', 'description', 'submitLabel', 'fields', 'summary']) ||
     !boundedText(v.formId, 100) || !boundedText(v.title, 120) || !boundedText(v.description, 500) || !boundedText(v.submitLabel, 60) ||
     !Array.isArray(v.fields) || v.fields.length < 1 || v.fields.length > 5) return false;
+  if (v.summary !== undefined && (!Array.isArray(v.summary) || v.summary.length < 1 || v.summary.length > 5 || !v.summary.every((r) => isObj(r) && onlyKeys(r, ['label', 'value']) && boundedText(r.label, 80) && boundedText(r.value, 160) && !/\{\{|\$\{/.test(r.value)))) return false;
   return new Set(v.fields.map((f) => isObj(f) ? f.id : null)).size === v.fields.length && v.fields.every((f) => {
-    if (!isObj(f) || !onlyKeys(f, ['id', 'label', 'kind', 'required', 'options']) ||
+    if (!isObj(f) || !onlyKeys(f, ['id', 'label', 'kind', 'required', 'options', 'presentation', 'optionDetails']) ||
       !isStr(f.id) || !/^[a-z][a-z0-9_]{0,30}$/.test(f.id) || ['constructor', 'prototype', '__proto__'].includes(f.id) ||
       !boundedText(f.label, 160) || typeof f.required !== 'boolean') return false;
+    if (f.presentation !== undefined && (f.kind !== 'choice' || !['cards', 'compact'].includes(String(f.presentation)))) return false;
+    if (f.optionDetails !== undefined && (f.kind !== 'choice' || !Array.isArray(f.optionDetails) || f.optionDetails.length > 8 || !Array.isArray(f.options) || new Set(f.optionDetails.map((d) => isObj(d) ? d.option : null)).size !== f.optionDetails.length || !f.optionDetails.every((d) => isObj(d) && onlyKeys(d, ['option', 'description', 'badge', 'icon']) && (f.options as unknown[]).includes(d.option) && boundedText(d.description, 180) && (d.badge === undefined || boundedText(d.badge, 40)) && (d.icon === undefined || ['bowl', 'home', 'basket', 'bank', 'speech', 'document'].includes(String(d.icon)))))) return false;
     if (f.kind === 'text' || f.kind === 'textarea') return f.options === undefined;
     return (f.kind === 'select' || f.kind === 'choice') && Array.isArray(f.options) && f.options.length >= 2 && f.options.length <= 8 &&
       f.options.every((o) => boundedText(o, 120)) && new Set(f.options).size === f.options.length;

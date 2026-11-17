@@ -152,7 +152,7 @@ test('429 → error có cấu trúc, thẻ xưng hô vẫn hiện, KHÔNG lộ k
   const { events, outcome } = await run(client, msg('Bạn ơi, tiền điện bao nhiêu?'));
   assert.equal(outcome, 'error'); assert.equal(types(events)[0], 'card:address');
   const err = events.at(-1) as any;
-  assert.deepEqual(err.error, { message: 'The AI service is busy', retryable: true });
+  assert.deepEqual(err.error, { message: 'Too many AI requests. Please wait a minute before retrying', retryable: true });
   assert.ok(!JSON.stringify(events).includes('test-key') && !JSON.stringify(events).includes('secret provider'));
   assert.equal((await client.getProgress()).totals.turns, 0);
 });
@@ -259,7 +259,7 @@ test('LLM decides UI/no UI; selections and original question return to model; ne
   assert.equal(form.title, 'Choose your lunch');
   assert.ok(!JSON.stringify(first.events.filter((e) => e.type === 'text_delta')).includes('submitLabel'));
   assert.ok(fake.requests[0].body.messages[0].content.includes('Do not follow a fixed form sequence'));
-  assert.equal(fake.requests[0].body.max_tokens, 1400);
+  assert.equal(fake.requests[0].body.max_tokens, 2400);
   fake.reply = uiReply({ title: 'Choose spice level', description: 'How spicy would you like your phở?', submitLabel: 'Use this preference',
     fields: [{ id: 'spice', label: 'Spice level', kind: 'select', required: true, options: ['Not spicy', 'A little spicy'] }] });
   const second = await run(client, { ...msg('Phở'), interactive: true, interaction: { formId: form.formId, values: { dish: 'Phở' } } });
@@ -296,7 +296,7 @@ test('generated UI bound to user and scenario; reject invalid/missing/unknown va
   assert.equal((await submit({ dish: 'Phở' })).status, 409);
 });
 
-test('malformed, unsupported, oversized, duplicate and truncated UI fall back to text without leaking JSON', async () => {
+test('malformed, unsupported, oversized, duplicate and truncated UI offer retry without committing or leaking JSON', async () => {
   reset(); const { client } = await start();
   const baseText = '<vi>Chọn món nhé.</vi><en>Choose a dish.</en>';
   const invalid = [
@@ -311,7 +311,9 @@ test('malformed, unsupported, oversized, duplicate and truncated UI fall back to
     fake.chunkSize = 512;
     fake.reply = baseText + suffix;
     const r = await run(client, { ...msg('Ask me'), interactive: true });
-    assert.equal(r.outcome, 'done');
+    assert.equal(r.outcome, 'error');
+    assert.ok(!r.events.some((e) => e.type === 'done'));
+    assert.equal((await client.getProgress()).totals.turns, 0);
     assert.ok(!r.events.some((e) => e.type === 'ui_card' && e.card.type === 'scenario_form'));
     assert.ok(r.events.some((e) => e.type === 'text_delta' && e.partId === 'ui-fallback'));
     assert.ok(!JSON.stringify(r.events).includes('actionUrl'));
@@ -338,4 +340,72 @@ test('failed generation preserves submitted form for retry; completed submission
   fake.mode = 'ok'; fake.reply = '<vi>Được.</vi><en>Okay.</en>';
   assert.equal((await run(client, { ...action, requestId: 'retry-action' })).outcome, 'done');
   await assert.rejects(run(client, { ...action, requestId: 'replay-action' }), (e: any) => e.status === 409);
+});
+
+test('length termination is a retryable error instead of accepting a truncated answer', async () => {
+  const wire = 'data: {"choices":[{"delta":{"content":"<vi>Hello"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n';
+  await assert.rejects(async () => {
+    for await (const _ of streamCompletion({ baseUrl: 'https://fixture.invalid', apiKey: 'test', model: 'test' }, [], undefined, async () => new Response(wire))) { /* consume */ }
+  }, (e: any) => e.code === 'truncated' && e.retryable);
+});
+
+test('long conversation retains valid UI and the latest answer with bounded context', async () => {
+  reset(); fake.chunkSize = 2048; const { client } = await start();
+  let form;
+  for (let i = 0; i < 14; i++) {
+    fake.reply = uiReply({ ...generated(`Decision ${i}`), summary: [{ label: 'Practice turn', value: String(i) }] });
+    const r = await run(client, { ...msg(`Practice ${i}`), interactive: true, ...(form ? { interaction: { formId: form.formId, values: { dish: 'Phở' } } } : {}) });
+    assert.equal(r.outcome, 'done'); form = formFrom(r.events);
+    assert.equal(form.title, `Decision ${i}`);
+    const messages = fake.requests.at(-1)!.body.messages;
+    assert.ok(messages.length <= 8);
+    assert.ok(messages.slice(1, -1).reduce((n: number, m: any) => n + m.content.length, 0) <= 10_000);
+    if (i) assert.ok(messages.at(-1).content.includes('Phở'));
+  }
+});
+
+test('oversized history is bounded without cutting a message or promoting it to system', () => {
+  const result = resolveAddressTerms({ learner: { age: 28 }, counterpart: { gender: 'male', ageRange: 'over50' }, relationship: 'landlord' }, rules);
+  const messages = buildMessages({ scenario: renting, profile: { purpose: 'settling', age: 28, gender: 'unknown', region: 'south' }, result, history: [{ role: 'user', text: 'x'.repeat(20000) }, { role: 'assistant', text: 'Latest complete answer' }], userMessage: 'Continue', interactive: true });
+  assert.equal(messages.length, 3); assert.equal(messages[1].content, 'Latest complete answer');
+  assert.ok(messages[0].content.includes('Do not start every reply with Dạ'));
+});
+
+test('transport heartbeat prevents client idle timeout while provider prepares first token', async () => {
+  const { client } = await start({ engine: { fetchImpl: async () => {
+    await new Promise((r) => setTimeout(r, 5200));
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: '<vi>Còn phòng nhé.</vi><en>A room is available.</en>' } }] })}\n\ndata: [DONE]\n\n`);
+  } } }, { timeoutMs: 6500 });
+  const r = await run(client, { ...msg('Is a room available?'), interactive: true }, { idleTimeoutMs: 4500 });
+  assert.equal(r.outcome, 'done'); assert.equal(viText(r.events), 'Còn phòng nhé.');
+});
+
+test('prose before protocol never leaks UI or tags regardless of chunk boundary', () => {
+  const input = 'Có trà đá. ' + FULL + '<ui>{"title":"private UI payload"}</ui>';
+  for (const size of [1, 2, 7, 30, 500]) {
+    const r = feed(input, size);
+    assert.equal(r.vi, 'Điện ba nghìn rưỡi một số.');
+    assert.ok(!r.vi.includes('<') && !r.vi.includes('private UI payload'));
+  }
+});
+
+test('one schema repair recovers UI without repeating speech or leaking JSON', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { fetchImpl: async () => {
+    const content = ++calls === 1 ? '<vi>Chọn món nhé.</vi><en>Choose a dish.</en><ui>{broken}</ui>' : JSON.stringify(generated());
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`);
+  } } });
+  const r = await run(client, { ...msg('Help me choose'), interactive: true });
+  assert.equal(calls, 2); assert.equal(r.outcome, 'done'); formFrom(r.events);
+  assert.equal(viText(r.events), 'Chọn món nhé.');
+  assert.equal((await client.getProgress()).totals.turns, 1);
+});
+
+test('Groq GPT-OSS uses documented completion budget and low reasoning; other providers stay compatible', async () => {
+  for (const baseUrl of ['https://api.groq.com/openai/v1', 'https://other.invalid/v1']) {
+    let body: any;
+    for await (const _ of streamCompletion({ baseUrl, apiKey: 'test', model: 'openai/gpt-oss-120b', maxTokens: 2400 }, [], undefined, async (_url, init) => { body = JSON.parse(String(init?.body)); return new Response('data: [DONE]\n\n'); })) {}
+    if (baseUrl.includes('api.groq.com')) { assert.equal(body.max_completion_tokens, 2400); assert.equal(body.reasoning_effort, 'low'); assert.equal(body.include_reasoning, false); assert.equal(body.max_tokens, undefined); }
+    else { assert.equal(body.max_tokens, 2400); assert.equal(body.reasoning_effort, undefined); }
+  }
 });

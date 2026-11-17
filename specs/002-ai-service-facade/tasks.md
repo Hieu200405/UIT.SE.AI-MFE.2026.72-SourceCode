@@ -21,3 +21,7 @@ T211 kiểm tra lại sau user khởi động Facade (2026-11-13): Host HTTP200,
 T211 hoàn tất kiểm chứng cơ chế ngày 2026-11-13: sau user chạy model mới, browser thật exit 0/status passed, health llm/dev=false. AI sinh chọn món, độ cay; chọn Không cay được phản ánh trong câu trả lời, sau đó AI sinh UI Payment. Đã đối chiếu ảnh và DOM. Launcher mặc định gemini-3.5-flash-lite; tên model dựa trên lệnh user xác nhận, health không công bố model. Bằng chứng/giới hạn tại docs/acceptance/live-llm.md. Không đồng nghĩa nghiệm thu toàn sản phẩm hoặc nội dung văn hóa.
 
 T211 kiểm chứng Groq 2026-11-16 theo yêu cầu user: Node nạp .env tại runtime, agent không mở/in/sửa secret. llama-3.3-70b-versatile trả http_404; override runtime Groq base URL + openai/gpt-oss-120b, live browser passed với UI chọn món/độ cay và phản hồi đúng rồi UI thanh toán. Chi tiết docs/acceptance/live-llm.md.
+
+T213: phạm vi Files/AC/Analyze tại ../003-chat-remote/tasks.md. Facade/prompt/schema và test thực hiện trên codex/t213-agent-quality.
+
+T213: parser preamble, bounded UI repair, heartbeat và lỗi phân biệt đã kiểm chứng hồi quy. Groq dài còn mở (empty/http_429); xem docs/acceptance/agent-quality.md. Không tuyên bố provider ổn định tuyệt đối.

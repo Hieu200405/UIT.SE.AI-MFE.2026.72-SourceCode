@@ -3,6 +3,7 @@ import { eventBus } from '@app/event-bus';
 import type { FacadeClient } from '@app/facade-client';
 import type { ProgressSnapshot, Scenario, ScenarioGroup, ScenarioStatus } from '@app/shared-types';
 import { Icon } from './Icons';
+import { VietnamScene } from './VietnamScene';
 import { ICON } from './Sidebar';
 
 const GROUPS: Array<[ScenarioGroup, string]> = [['administrative', 'Administrative'], ['daily_life', 'Daily life'], ['social', 'Social']];
@@ -47,7 +48,7 @@ export function PracticeScreen({ client, onPick }: { client: FacadeClient; onPic
       <div className="chat:grid chat:gap-4 chat:sm:grid-cols-2 chat:lg:grid-cols-4">
         {shown.map((s) => (
           <button key={s.id} data-testid={`scenario-${s.id}`} data-recommended={rec.has(s.id)} onClick={() => onPick(s)}
-            className={'chat:flex chat:flex-col chat:gap-2 chat:rounded-2xl chat:bg-white chat:p-4 chat:text-left chat:hover:shadow-md ' + (rec.has(s.id) ? 'chat:border-2 chat:border-teal-700' : 'chat:border chat:border-stone-200')}>
+            className={'chat:scenario-tile chat:flex chat:flex-col chat:gap-2 chat:rounded-2xl chat:bg-white chat:p-4 chat:text-left chat:hover:shadow-md ' + (rec.has(s.id) ? 'chat:border-2 chat:border-teal-700' : 'chat:border chat:border-stone-200')}>
             {rec.has(s.id) && <span className="chat:text-xs chat:font-semibold chat:text-teal-800">Recommended for you</span>}
             <span className="chat:flex chat:w-full chat:items-start chat:justify-between">
               <span className="chat:flex chat:h-9 chat:w-9 chat:items-center chat:justify-center chat:rounded-lg chat:bg-teal-50 chat:text-teal-700"><Icon name={ICON[s.icon] ?? 'speech'} /></span>
@@ -59,9 +60,12 @@ export function PracticeScreen({ client, onPick }: { client: FacadeClient; onPic
       </div>);
   }
   return (
-    <div data-testid="practice-screen" className="chat:flex chat:flex-col chat:gap-4 chat:p-4">
-      <div><h2 className="chat:text-3xl chat:font-bold">What do you want to practice today?</h2>
-        <p className="chat:text-stone-600">Pick a real-life situation. You’ll chat with an AI character and get tips as you go.</p></div>
+    <div data-testid="practice-screen" className="chat:practice-vietnam chat:flex chat:flex-col chat:gap-4 chat:p-4">
+      <div className="chat:vietnam-hero">
+        <div className="chat:hero-copy"><span className="chat:local-eyebrow">TIẾNG VIỆT · EVERYDAY CONNECTIONS</span><div className="chat:hero-greeting">Xin chào,<br />Việt Nam.</div><p>From a bowl of phở to a chat with your neighbours. Find your words in everyday life.</p><span className="chat:hero-stamp">Nói một chút. Gần nhau hơn.</span></div>
+        <div className="chat:hero-art"><VietnamScene /></div>
+      </div>
+      <div className="chat:practice-intro"><span className="chat:local-eyebrow">CHUYỆN HẰNG NGÀY / EVERYDAY STORIES</span><h2 className="chat:text-3xl chat:font-bold">What do you want to practice today?</h2><p className="chat:text-stone-600">Pick a situation. Your conversation decides what comes next.</p></div>
       <div className="chat:flex chat:flex-wrap chat:gap-2" role="group" aria-label="Filter by group">
         {GROUPS.map(([g, label]) => (
           <button key={g} aria-pressed={filter.has(g)} onClick={() => toggle(g)}

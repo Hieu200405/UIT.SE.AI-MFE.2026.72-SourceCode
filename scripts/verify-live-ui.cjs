@@ -9,7 +9,7 @@ const events = [];
 const pending = [];
 let browser;
 let page;
-const report = { status: 'not_run', checks: {}, events, error: null };
+const report = { status: 'not_run', checks: { recoveredErrors: [] }, events, error: null };
 (async () => {
   fs.mkdirSync(output, { recursive: true });
   const health = await (await fetch(facade + '/health', { signal: AbortSignal.timeout(5000) })).json();
@@ -17,9 +17,11 @@ const report = { status: 'not_run', checks: {}, events, error: null };
   report.checks.health = health;
   browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM_PATH || undefined, headless: process.env.LIVE_HEADED !== '1' });
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.setDefaultTimeout(15000);
   page.on('response', (response) => {
     if (!response.url().startsWith(facade + '/chat/stream')) return;
-    pending.push(response.text().then((raw) => {
+    pending.push(response.body().then((body) => {
+      const raw = body.toString('utf8');
       for (const line of raw.split('\n')) if (line.startsWith('data: ')) {
         try { events.push(JSON.parse(line.slice(6))); } catch {}
       }
@@ -27,7 +29,16 @@ const report = { status: 'not_run', checks: {}, events, error: null };
   });
   const done = async () => {
     await page.getByTestId('replying').waitFor({ state: 'hidden', timeout: 90000 });
-    if (await page.getByTestId('chat-error').count()) throw new Error(await page.getByTestId('chat-error').innerText());
+    if (await page.getByTestId('chat-error').count()) {
+      const error = await page.getByTestId('chat-error').innerText();
+      const retry = page.getByTestId('chat-error').getByRole('button', { name: 'Retry', exact: true });
+      if (process.env.LIVE_RETRY_ONCE === '1' && await retry.count()) {
+        await page.waitForTimeout(2000); await retry.click();
+        await page.getByTestId('replying').waitFor({ state: 'hidden', timeout: 90000 });
+        if (!await page.getByTestId('chat-error').count()) { report.checks.recoveredErrors.push(error); return; }
+      }
+      throw new Error(error);
+    }
   };
   await page.goto(host + '/chat?facade=' + encodeURIComponent(facade) + '&streamTimeout=45000');
   await page.getByTestId('scenario-street_food').click();
@@ -63,6 +74,16 @@ const report = { status: 'not_run', checks: {}, events, error: null };
     if (await page.getByTestId('msg-agent').count() <= before) throw new Error('No agent reply after interaction.');
     report.checks.followup = await page.getByTestId('msg-agent').last().innerText();
     await page.screenshot({ path: path.join(output, 'after-interaction.png'), fullPage: true });
+    report.checks.extendedDialogue = [];
+    const followups = Math.min(12, Math.max(0, Number(process.env.LIVE_FOLLOWUP_TURNS || 0)));
+    for (let turn = 0; turn < followups; turn++) {
+      const prompts = ['Ăn ở đây, cho thêm rau nhé.', 'Có trà đá không?', 'Cho một ly thôi, ít đá.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.', 'Món này có hành không?', 'Lần sau mình muốn thử món khác. Có món nào nữa?', 'Giúp mình chọn hai món để so sánh nhé.', 'Giữ món không cay nhé.'];
+      await page.getByLabel('Your reply').fill(prompts[turn % prompts.length]);
+      await page.getByTestId('send-button').click(); await done();
+      report.checks.extendedDialogue.push({ turn: turn + 1, prompt: prompts[turn % prompts.length], reply: await page.getByTestId('msg-agent').last().innerText() });
+      await page.waitForTimeout(5000);
+    }
+    if (followups) await page.screenshot({ path: path.join(output, 'long-conversation.png'), fullPage: true });
     report.status = 'passed';
   } else throw new Error('No active generated form to submit.');
 })().catch(async (error) => {

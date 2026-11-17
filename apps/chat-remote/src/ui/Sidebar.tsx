@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { Profile, Scenario, ScenarioStatus } from '@app/shared-types';
+import { VietnamScene } from './VietnamScene';
 import { Icon } from './Icons';
 
 export const ICON: Record<string, string> = { home: 'home', medical: 'medical', document: 'document', bank: 'bank', basket: 'basket', people: 'people', heart: 'heart', bowl: 'bowl' };
@@ -10,7 +11,8 @@ export function Sidebar({ scenario, profile, status, onChange, onToggleDone, don
   const c = scenario.character;
   const [ticked, setTicked] = useState<Record<string, boolean>>({}); // chỉ là checklist gợi ý (clarify #12), không đánh giá tự động
   return (
-    <aside className="chat:hidden chat:w-64 chat:shrink-0 chat:flex-col chat:gap-3 chat:border-r chat:border-stone-200 chat:bg-white chat:p-4 chat:md:flex">
+    <aside className="chat:vietnam-sidebar chat:hidden chat:w-64 chat:shrink-0 chat:flex-col chat:gap-3 chat:border-r chat:border-stone-200 chat:bg-white chat:p-4 chat:md:flex">
+      <div className="chat:sidebar-art"><VietnamScene compact /><span className="chat:sidebar-caption">Một góc Việt Nam</span></div>
       <div>
         <div className="chat:text-xs chat:text-stone-500">Scenario</div>
         <h2 data-testid="scenario-title" className="chat:text-xl chat:font-bold">{scenario.title}</h2>

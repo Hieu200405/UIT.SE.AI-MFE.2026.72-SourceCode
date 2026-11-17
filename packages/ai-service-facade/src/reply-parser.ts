@@ -17,7 +17,7 @@ function holdBack(s: string, closing: string): number {
 export class ReplyParser {
   uiStarted = 0;
   uiCompleted = 0;
-  private buf = ''; private section: Section | null = null; private sawTag = false; private plain = false; private fresh = false;
+  private buf = ''; private section: Section | null = null; private sawTag = false; private fresh = false;
 
   private emit(out: Piece[], section: Section, text: string) {
     if (this.fresh) { text = text.trimStart(); if (text) this.fresh = false; }
@@ -28,7 +28,6 @@ export class ReplyParser {
     const out: Piece[] = [];
     this.buf += chunk;
     for (;;) {
-      if (this.plain) { this.emit(out, 'vi', this.buf); this.buf = ''; return out; }
       if (this.section === null) {
         const t = this.buf.trimStart();
         if (!t) return out;
@@ -36,7 +35,11 @@ export class ReplyParser {
         if (m) { this.section = m[1] as Section; if (this.section === 'ui') this.uiStarted++; this.sawTag = true; this.fresh = true; this.buf = t.slice(m[0].length); continue; }
         if (t[0] === '<' && partialOpener(t)) { this.buf = t; return out; }      // chờ thêm để biết có phải thẻ
         if (this.sawTag) { const i = t.indexOf('<', 1); if (i < 0) { this.buf = ''; return out; } this.buf = t.slice(i); continue; } // chữ ngoài thẻ: bỏ
-        this.plain = true; this.fresh = true; this.buf = t; continue;                // không có thẻ: coi là tiếng Việt
+        // Do not commit to plain mode until EOF: some providers prepend prose to tags.
+        const opener = t.search(/<(user_en|vi|en|ui)>/);
+        if (opener >= 0) { this.buf = t.slice(opener); continue; }
+        this.buf = t.slice(-12000); return out; // bounded preamble; tags may arrive in a later chunk
+
       }
       const closing = `</${this.section}>`;
       const i = this.buf.indexOf(closing);
@@ -50,7 +53,7 @@ export class ReplyParser {
   end(): Piece[] {
     const out: Piece[] = [];
     if (this.section) this.emit(out, this.section, this.buf);
-    else if (this.plain) this.emit(out, 'vi', this.buf);
+    else if (!this.sawTag) this.emit(out, 'vi', this.buf);
     this.buf = ''; return out;
   }
 }

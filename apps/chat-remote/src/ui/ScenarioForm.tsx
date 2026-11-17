@@ -41,17 +41,20 @@ export function ScenarioForm({ data, disabled, submitted, onSubmit }: {
         <div><div className="chat:form-eyebrow">Let's make it yours</div><h3 className="chat:form-title">{data.title}</h3></div>
       </div>
       <p className="chat:form-description">{data.description}</p>
+      {data.summary && <div className="chat:decision-summary"><div className="chat:summary-label">So far in our conversation</div><dl>{data.summary.map((row) => <div key={row.label} className="chat:summary-row"><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl></div>}
       <fieldset disabled={disabled} className="chat:form-fields">
         {data.fields.map((field) => {
           const label = field.label + (field.required ? ' *' : ' (optional)');
           if (field.kind === 'choice') return <fieldset key={field.id} className="chat:choice-field">
             <legend className="chat:field-label">{label}</legend>
-            <div className="chat:choice-grid">{field.options?.map((option, index) => <label key={option} className={'chat:choice-card ' + (values[field.id] === option ? 'chat:choice-selected' : '')}>
-              <input type="radio" name={`${data.formId}-${field.id}`} value={option} checked={values[field.id] === option} required={field.required} onChange={() => change(field.id, option)} className="chat:choice-input" />
-              <span className="chat:choice-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+            <div className={field.presentation === 'compact' ? 'chat:compact-choices' : 'chat:choice-grid'}>{field.options?.map((option, index) => { const detail = field.optionDetails?.find((d) => d.option === option); return <label key={option} className={'chat:choice-card ' + (values[field.id] === option ? 'chat:choice-selected' : '')}>
+              <input type="radio" name={`${data.formId}-${field.id}`} value={option} aria-label={option} checked={values[field.id] === option} required={field.required} onChange={() => change(field.id, option)} className="chat:choice-input" />
+              <span className="chat:choice-number" aria-hidden="true">{detail?.icon ? <Icon name={detail.icon} size={25} /> : String(index + 1).padStart(2, '0')}</span>
               <span className="chat:choice-text">{option}</span>
+              {detail && <span className="chat:choice-description">{detail.description}</span>}
+              {detail?.badge && <span className="chat:choice-badge">{detail.badge}</span>}
               <span className="chat:choice-indicator" aria-hidden="true">{values[field.id] === option ? '✓' : ''}</span>
-            </label>)}</div>
+            </label>; })}</div>
           </fieldset>;
           return <label key={field.id} className="chat:field-label">
             {label}
