@@ -423,4 +423,25 @@ test.describe('Generative Agent UI (real Facade, deterministic test provider)', 
     await say(page, 'I want noodles'); await lastAgentDone(page);
     await expect(page.getByTestId('scenario-form')).toHaveCount(0);
   });
+
+  test('comparison criteria, unsent preview, keyboard and mobile stay interactive', async ({ page }) => {
+    await page.goto(url); await pick(page, 'street_food'); await lastAgentDone(page);
+    await say(page, 'Compare two dishes'); await lastAgentDone(page);
+    const form = page.getByTestId('scenario-form').last();
+    await expect(form).toContainText('In warm broth'); await expect(form).toContainText('Thin round noodles');
+    await expect(form.getByTestId('selection-preview')).toHaveCount(0);
+    await form.getByRole('radio', { name: 'Phở', exact: true }).focus(); await page.keyboard.press('Space');
+    await expect(form.getByTestId('selection-preview')).toContainText('Your dish: Phở');
+    expect(await page.locator('[class~="chat:composer-shell"]').evaluate(el => getComputedStyle(el).position)).toBe('static');
+    await page.screenshot({ path: 'test-results/comparison-desktop.png', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(form.getByRole('radio', { name: 'Phở', exact: true })).toBeChecked();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await form.getByRole('radio', { name: 'Bún', exact: true }).check();
+    await expect(form.getByTestId('selection-preview')).toContainText('Your dish: Bún');
+    await page.screenshot({ path: 'test-results/comparison-mobile.png', fullPage: true });
+    await form.getByRole('button', { name: 'Continue', exact: true }).click(); await lastAgentDone(page);
+    await expect(page.getByTestId('agent-text').filter({ hasText: 'Bạn chọn Bún' })).toBeVisible();
+  });
 });

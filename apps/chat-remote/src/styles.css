@@ -136,3 +136,19 @@
 @media (prefers-reduced-motion: reduce) {
   .chat\:scenario-tile { transition: none; transform: none; }
 }
+
+/* T218: comparisons are native choices, with consistent criteria and no fixed flow. */
+.chat\:comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr)); gap: 14px; margin-top: 12px; }
+.chat\:comparison-grid .chat\:choice-card { padding: 20px 18px 16px; gap: 12px; border-radius: 18px; }
+.chat\:comparison-grid .chat\:choice-text { padding-right: 20px; font-size: 17px; }
+.chat\:comparison-grid .chat\:choice-description { color: #53604d; min-height: 38px; }
+.chat\:comparison-hint { color: #67725c; font-size: 12px; margin-top: 6px; }
+.chat\:option-facts { display: flex; flex-direction: column; margin-top: auto; border-top: 1px solid #e6ddcd; }
+.chat\:option-fact { display: flex; flex-direction: column; gap: 4px; padding: 11px 0; border-bottom: 1px solid #e6ddcd; overflow-wrap: anywhere; }
+.chat\:fact-label { color: #7a705e; font-size: 11px; font-weight: 500; }
+.chat\:fact-value { color: #263b2c; font-size: 13px; line-height: 1.5; }
+.chat\:comparison-action { padding-top: 4px; font-size: 12px; font-weight: 600; color: #466d49; }
+.chat\:selection-preview { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; border-left: 3px solid #698364; background: #f1f5ec; border-radius: 0 10px 10px 0; color: #354c34; font-size: 13px; overflow-wrap: anywhere; }
+.chat\:selection-heading { font-size: 11px; color: #64725a; font-weight: 600; }
+.chat\:workspace:has(.chat\:agent-form) .chat\:composer-shell { position: static; }
+@media (max-width: 600px) { .chat\:comparison-grid { grid-template-columns: minmax(0, 1fr); } }

@@ -38,7 +38,7 @@ export function ScenarioForm({ data, disabled, submitted, onSubmit }: {
     }}>
       <div className="chat:form-heading">
         <span className="chat:form-mark" aria-hidden="true"><Icon name="speech" size={18} /></span>
-        <div><div className="chat:form-eyebrow">Let's make it yours</div><h3 className="chat:form-title">{data.title}</h3></div>
+        <div><div className="chat:form-eyebrow">{data.fields.some((f) => f.presentation === 'comparison') ? 'Explore your options' : 'Your next choice'}</div><h3 className="chat:form-title">{data.title}</h3></div>
       </div>
       <p className="chat:form-description">{data.description}</p>
       {data.summary && <div className="chat:decision-summary"><div className="chat:summary-label">So far in our conversation</div><dl>{data.summary.map((row) => <div key={row.label} className="chat:summary-row"><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl></div>}
@@ -47,12 +47,15 @@ export function ScenarioForm({ data, disabled, submitted, onSubmit }: {
           const label = field.label + (field.required ? ' *' : ' (optional)');
           if (field.kind === 'choice') return <fieldset key={field.id} className="chat:choice-field">
             <legend className="chat:field-label">{label}</legend>
-            <div className={field.presentation === 'compact' ? 'chat:compact-choices' : 'chat:choice-grid'}>{field.options?.map((option, index) => { const detail = field.optionDetails?.find((d) => d.option === option); return <label key={option} className={'chat:choice-card ' + (values[field.id] === option ? 'chat:choice-selected' : '')}>
-              <input type="radio" name={`${data.formId}-${field.id}`} value={option} aria-label={option} checked={values[field.id] === option} required={field.required} onChange={() => change(field.id, option)} className="chat:choice-input" />
+            {field.presentation === 'comparison' && <p className="chat:comparison-hint">Compare the details, then choose what fits.</p>}
+            <div className={field.presentation === 'compact' ? 'chat:compact-choices' : field.presentation === 'comparison' ? 'chat:comparison-grid' : 'chat:choice-grid'}>{field.options?.map((option, index) => { const detail = field.optionDetails?.find((d) => d.option === option); return <label key={option} className={'chat:choice-card ' + (values[field.id] === option ? 'chat:choice-selected' : '')}>
+              <input type="radio" name={`${data.formId}-${field.id}`} value={option} aria-label={option} aria-describedby={detail ? `${data.formId}-${field.id}-${index}-detail` : undefined} checked={values[field.id] === option} required={field.required} onChange={() => change(field.id, option)} className="chat:choice-input" />
               <span className="chat:choice-number" aria-hidden="true">{detail?.icon ? <Icon name={detail.icon} size={25} /> : String(index + 1).padStart(2, '0')}</span>
               <span className="chat:choice-text">{option}</span>
-              {detail && <span className="chat:choice-description">{detail.description}</span>}
+              {detail && <span id={`${data.formId}-${field.id}-${index}-detail`} className="chat:choice-description">{detail.description}</span>}
               {detail?.badge && <span className="chat:choice-badge">{detail.badge}</span>}
+              {detail?.facts && <span className="chat:option-facts">{detail.facts.map((fact) => <span key={fact.label} className="chat:option-fact"><span className="chat:fact-label">{fact.label}</span><span className="chat:fact-value">{fact.value}</span></span>)}</span>}
+              {field.presentation === 'comparison' && <span className="chat:comparison-action">{values[field.id] === option ? 'Selected' : 'Choose this option'}</span>}
               <span className="chat:choice-indicator" aria-hidden="true">{values[field.id] === option ? '✓' : ''}</span>
             </label>; })}</div>
           </fieldset>;
@@ -65,6 +68,7 @@ export function ScenarioForm({ data, disabled, submitted, onSubmit }: {
           </label>;
         })}
         {error && <p role="alert" className="chat:text-sm chat:text-red-700">{error}</p>}
+        {answers.length > 0 && <div className="chat:selection-preview" data-testid="selection-preview" aria-live="polite" aria-atomic="true"><span className="chat:selection-heading">Your selection · not sent yet</span><span>{answers.map((f) => `${f.label}: ${values[f.id]}`).join(' · ')}</span></div>}
         <div className="chat:form-footer"><span className="chat:form-caption">{disabled ? 'Waiting for the agent…' : 'Or tell me in your own words'}</span><button type="submit" className="chat:form-submit">{data.submitLabel}<span aria-hidden="true">→</span></button></div>
       </fieldset>
     </form>

@@ -1,5 +1,10 @@
 # 003 – Tasks (DO). P = song song được. Mỗi task: 1 Agent – 1 branch – 1 PR.
 
+## T218 — UI so sánh và lời thoại tự nhiên (2026-11-18)
+- Files: specs/003-chat-remote/{spec,plan,tasks}.md; specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/shared-types/{src/index.ts,test/contract.test.ts}; packages/ai-service-facade/src/prompt.ts; packages/ai-service-facade/test/llm.test.ts; apps/chat-remote/src/ui/ScenarioForm.tsx; apps/chat-remote/src/styles.css; tests/fixtures/generative-provider.ts; tests/e2e/mfe.spec.ts; scripts/verify-live-ui.cjs; docs/acceptance/rich-agent-ui.md.
+- AC: comparison trong registry scenario_form, tiêu chí có giới hạn và đồng nhất giữa options; model chọn UI theo hội thoại, không wizard; preview lựa chọn trước submit, keyboard/390px/reduced motion; prompt không xác nhận giao dịch thực khi mới nói ý định; build/lint/tests/typecheck, ảnh desktop/mobile và Groq thật form→submit→phản hồi. Không dependency, không secret, không đổi quy tắc văn hóa.
+- Kết quả code: build/lint/web+mobile typecheck, 179/179 test pass; Groq thật comparison→submit pass (bản cuối English facts), lần đầu thêm4 followups. Naturalness còn lỗi ký tự lẫn/ngôn ngữ và câu kết lặp ở một lượt: xem docs/acceptance/rich-agent-ui.md; không coi duyệt ngôn ngữ hoàn tất. Chưa commit/push.
+
 T204 (2026-11-11): kiểm thử nghiệm thu và cô lập server E2E; phạm vi Files/AC tại `../000-master/tasks.md`. Được người dùng duyệt trong đợt hoàn tất baseline.
 
 | ID | P | Task | Files | Phụ thuộc | Agent gợi ý |

@@ -1,5 +1,16 @@
 # 002 – AI Service Facade & Contract v0.2 – spec
 
+## T217
+T218: model có thể chọn presentation comparison và facts theo schema chung; không ép so sánh mỗi lượt. Prompt lời thoại ngắn theo vai, phân biệt ý định và hành động hoàn tất; UI và speech không tự xác nhận giao dịch thật.
+Khi provider trả 429, Facade tôn trọng Retry-After và chia sẻ cooldown qua limiter của process. Trong thời gian chờ mọi lượt LLM (kể cả repair/recovery) bị chặn trước khi gọi provider. Người dùng nhận số giây chờ còn lại. Không tự gửi lại, không cộng lượt/commit UI lỗi. Cooldown in-memory không đảm bảo đồng bộ nhiều replica hoặc qua restart.
+
+## T216
+Thay chính sách T215 cho network: cho phép một lần phục hồi network trước lời thoại, không replay khi đã xuất lời thoại; chia sẻ giới hạn hai attempts với empty recovery. Lựa chọn bằng text và UI đều là dữ liệu hội thoại cần nhớ trong giới hạn. Không ép câu hỏi/UI ở cuối mọi lượt, không hỏi lại quyết định đã trả lời hoặc liên tục nhắc câu chưa trả lời khi người học đang hỏi việc khác.
+
+## T215
+Output thành công ở transport nhưng không có lời thoại được phục hồi tối đa một lần qua cùng provider/limiter/budget; output UI/translation của lần rỗng không xuất hiện hoặc commit. Không tự retry HTTP/429/network.
+Lượt chỉ hoàn tất khi provider xác nhận kết thúc thành công. EOF bất ngờ, content_filter/tool_calls ngoài protocol và lỗi giữa stream không commit. Mỗi lời gọi có idle timeout và deadline tổng 60s mặc định. Các lựa chọn UI đã gửi được giữ dưới dạng dữ liệu user trong cửa sổ lịch sử bounded, không phải chỉ dẫn system; đây không phải bộ nhớ dài hạn vô hạn.
+
 ## Mục đích
 Điểm truy cập duy nhất tới LLM/rule engine/store cho web và mobile. Contract nằm ở packages/shared-types (nguồn sự thật).
 

@@ -66,5 +66,6 @@ LLM tự quyết định thời điểm và nội dung UI khi người học gia
 Nâng cấp presentation của UI do AI sinh: choice dạng thẻ chọn, trường nhập rõ nhãn, footer hành động gọn; form cũ thu gọn có thể xem lại và phân biệt đã gửi/đã thay thế. Giữ tự do chat, không biến mục tiêu sidebar thành các bước bắt buộc. Trạng thái gửi không đồng nghĩa server đã xử lý thành công; lỗi vẫn Retry qua banner hiện có.
 
 ## T213 — Chất lượng Agent và bản sắc Việt Nam
+T218 mở rộng: presentation comparison có 2–4 tiêu chí label/value trên mỗi lựa chọn, cùng nhãn/thứ tự để so sánh. Preview phản ánh lựa chọn đang sửa, chưa đồng nghĩa Agent đã nhận. Giữ lựa chọn native radio và tự do chat.
 WHAT: UI do model lựa chọn có thông tin để so sánh và xác nhận; hội thoại dài không mất UI âm thầm khi lỗi; lời thoại ngắn, tự nhiên theo vai; giao diện có minh họa phố Việt. UI không phải wizard, vẫn cho trả lời tự do. Không thay quy tắc xưng hô hay khẳng định văn hóa mới.
 AC: schema additive cho presentation cards/compact, optionDetails và summary có giới hạn; dữ liệu lạ bị từ chối. Form lỗi/truncated có Retry, không commit; text-only hợp lệ vẫn hoàn tất. Có minh họa gốc nội bộ, không URL ảnh do model cung cấp. Responsive/keyboard/reduced-motion pass.

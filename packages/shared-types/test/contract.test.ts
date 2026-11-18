@@ -132,3 +132,14 @@ test('rich UI metadata is bounded, optional and cannot inject assets or arbitrar
   ]) assert.equal(validateUICard({ type: 'scenario_form', data: { ...data, fields } }), false);
   assert.equal(validateUICard({ type: 'scenario_form', data: { ...data, summary: [{ label: 'x', value: {} }] } }), false);
 });
+
+test('comparison UI validates consistent bounded criteria and rejects partial comparisons', () => {
+  const details = ['Phở', 'Bún'].map(option => ({ option, description: 'Practice example', facts: [{ label: 'Serving', value: 'A bowl' }, { label: 'Texture', value: 'Soft noodles' }] }));
+  const field = { id: 'dish', label: 'Dish', kind: 'choice', required: true, options: ['Phở', 'Bún'], presentation: 'comparison', optionDetails: details };
+  const data = { formId: 'comparison', title: 'Compare', description: 'Pick one', submitLabel: 'Choose', fields: [field] };
+  assert.ok(validateUICard({ type: 'scenario_form', data }));
+  for (const optionDetails of [[], details.slice(0,1), details.map(d => ({...d, facts: []})), [details[0], {...details[1], facts: [...details[1].facts].reverse()}], details.map(d => ({...d, facts: [d.facts[0], d.facts[0]]})), details.map(d => ({...d, facts: [{label:'Serving',value:{bad:true}}, d.facts[1]]})), details.map(d => ({...d, facts: [{label:'Serving',value:'x'.repeat(121)}, d.facts[1]]})), details.map(d => ({...d, facts: [{label:'Serving',value:'${placeholder}'}, d.facts[1]]}))]) {
+    assert.equal(validateUICard({type:'scenario_form',data:{...data,fields:[{...field,optionDetails}]}}),false);
+  }
+  assert.equal(validateUICard({ type:'scenario_form',data:{...data,fields:[{...field,options:[],optionDetails:[]}]}}),false);
+});

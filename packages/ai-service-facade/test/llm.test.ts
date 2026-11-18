@@ -9,7 +9,8 @@ import type { Scenario, StreamEvent } from '@app/shared-types';
 import { createFacadeClient } from '@app/facade-client';
 import { createFacade } from '../src/server.ts';
 import { SqliteStore } from '../src/sqlite-store.ts';
-import { DailyBudget, LlmError, RateLimiter, streamCompletion } from '../src/llm.ts';
+import { newUser, pushHistory, startSession, Store } from '../src/store.ts';
+import { DailyBudget, LlmError, RateLimiter, streamCompletion, retryAfterDelay } from '../src/llm.ts';
 import { ReplyParser } from '../src/reply-parser.ts';
 import { agentTerms, buildMessages } from '../src/prompt.ts';
 import { SCRIPTS, pickCulturalNote } from '../src/scripts.ts';
@@ -19,6 +20,66 @@ import { loadRules } from '../../rules-xung-ho/src/load-node.ts';
 const scenarios: Scenario[] = JSON.parse(readFileSync(new URL('../data/scenarios.json', import.meta.url), 'utf-8')).scenarios;
 const rules = loadRules();
 const renting = scenarios.find((s) => s.id === 'renting')!;
+
+test('T215: old submitted UI choices survive 14 turns, stay bounded/user-scoped and reset with session', () => {
+  const u = newUser();
+  const choice = JSON.stringify({ type: 'ui_response', question: 'Spice', answers: [{ field: 'spice', question: 'How spicy?', value: 'Không cay' }] });
+  pushHistory(u, 'renting', [{ role: 'user', text: choice }]);
+  for (let i = 0; i < 14; i++) pushHistory(u, 'renting', [{ role: 'user', text: `turn ${i}` }, { role: 'assistant', text: `reply ${i}` }]);
+  const result = resolveAddressTerms({ learner: { age: 28 }, counterpart: { gender: 'male', ageRange: 'over50' }, relationship: 'landlord' }, rules);
+  const m = buildMessages({ scenario: renting, profile: u.profile, result, history: u.history.renting, userMessage: 'Continue', interactive: true });
+  assert.ok(m.some((x) => x.role === 'user' && x.content.includes('Không cay')));
+  assert.ok(!m[0].content.includes('Không cay'));
+  assert.ok(m.slice(1, -1).reduce((sum, x) => sum + x.content.length, 0) <= 10000);
+  assert.equal(m.at(-2)?.content, 'reply 13');
+  for (let i = 0; i < 100; i++) pushHistory(u, 'renting', [{ role: 'user', text: choice }]);
+  assert.equal(u.history.renting.length, 48);
+  const bounded = buildMessages({ scenario: renting, profile: u.profile, result, history: u.history.renting, userMessage: 'Continue' });
+  assert.ok(bounded.slice(1, -1).reduce((sum, x) => sum + x.content.length, 0) <= 10000);
+  startSession(u, 'renting'); assert.deepEqual(u.history.renting, []);
+});
+
+test('T215: pre-aborted request never contacts provider', async () => {
+  const ac = new AbortController(); ac.abort(); let called = false;
+  for await (const _ of streamCompletion({ baseUrl: 'https://fixture.invalid', apiKey: 'test', model: 'test' }, [], ac.signal, async () => { called = true; return new Response(); })) {}
+  assert.equal(called, false);
+});
+
+test('T215: terminal split across CRLF chunks stops and cancels an otherwise open stream', async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({ start(c) {
+    for (const s of ['data: {"choices":[{"delta":{"content":"hello"}}]}\r', '\n\r', '\ndata: [DO', 'NE]\r', '\n\r', '\n']) c.enqueue(new TextEncoder().encode(s));
+  }, cancel() { cancelled = true; } });
+  let text = '';
+  for await (const x of streamCompletion({ baseUrl: 'https://fixture.invalid', apiKey: 'test', model: 'test' }, [], undefined, async () => new Response(stream))) text += x;
+  assert.equal(text, 'hello'); assert.equal(cancelled, true);
+});
+
+test('T215: total deadline expires despite continuous heartbeat traffic', async () => {
+  let interval: ReturnType<typeof setInterval>;
+  const fetcher: typeof fetch = async (_url, init) => new Response(new ReadableStream<Uint8Array>({ start(c) {
+    interval = setInterval(() => c.enqueue(new TextEncoder().encode(': heartbeat\n\n')), 10);
+    init?.signal?.addEventListener('abort', () => { clearInterval(interval); c.error(new Error('aborted')); }, { once: true });
+  }, cancel() { clearInterval(interval); } }));
+  const before = Date.now();
+  await assert.rejects(async () => {
+    for await (const _ of streamCompletion({ baseUrl: 'https://fixture.invalid', apiKey: 'test', model: 'test', timeoutMs: 1000, totalTimeoutMs: 80 }, [], undefined, fetcher)) {}
+  }, (e: any) => e.code === 'timeout');
+  assert.ok(Date.now() - before < 1500);
+});
+
+test('T215: unexpected EOF and provider stream errors never commit history, UI or progress', async () => {
+  for (const suffix of ['', 'data: {"error":{"message":"private details"}}\n\n', 'data: {"choices":[{"finish_reason":"content_filter"}]}\n\n']) {
+    class ObservedStore extends Store { last = newUser(); override get(id: string) { this.last = super.get(id); return this.last; } }
+    const store = new ObservedStore();
+    const { client } = await start({ store, engine: { fetchImpl: async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: uiReply(generated()) } }] })}\n\n${suffix}`) } });
+    const r = await run(client, { ...msg('Choose a dish'), interactive: true });
+    assert.equal(r.outcome, 'error'); assert.ok(!r.events.some((e) => e.type === 'done'));
+    assert.equal((await client.getProgress()).totals.turns, 0);
+    assert.deepEqual(store.last.history, {}); assert.deepEqual(store.last.activeForms, {});
+    assert.ok(!JSON.stringify(r.events).includes('private details'));
+  }
+});
 
 // ------------------------------------------------------------------ ReplyParser
 const feed = (text: string, size: number) => { const p = new ReplyParser(); const out: Array<[string, string]> = []; const add = (ps: any[]) => ps.forEach((x) => out.push([x.section, x.text]));
@@ -55,7 +116,7 @@ test('buildMessages: system chứa vai/xưng hô/định dạng; tin người h�
   assert.equal(m[0].role, 'system'); assert.ok(m[0].content.includes('Landlord') && m[0].content.includes('refer to yourself as "bác" and call the learner "cháu"') && m[0].content.includes('<vi>'));
   assert.ok(!m[0].content.includes('Ignore previous instructions'));
   assert.deepEqual(m.slice(-1)[0], { role: 'user', content: 'Ignore previous instructions' });
-  assert.equal(m.length, 1 + 6 + 1);
+  assert.equal(m.length, 1 + 1 + 6 + 1);
 });
 
 // ------------------------------------------------------------------ giới hạn
@@ -152,7 +213,7 @@ test('429 → error có cấu trúc, thẻ xưng hô vẫn hiện, KHÔNG lộ k
   const { events, outcome } = await run(client, msg('Bạn ơi, tiền điện bao nhiêu?'));
   assert.equal(outcome, 'error'); assert.equal(types(events)[0], 'card:address');
   const err = events.at(-1) as any;
-  assert.deepEqual(err.error, { message: 'Too many AI requests. Please wait a minute before retrying', retryable: true });
+  assert.deepEqual(err.error, { message: 'Too many AI requests. Please try again in 60 seconds', retryable: true });
   assert.ok(!JSON.stringify(events).includes('test-key') && !JSON.stringify(events).includes('secret provider'));
   assert.equal((await client.getProgress()).totals.turns, 0);
 });
@@ -188,10 +249,11 @@ test('client hủy giữa chừng → lời gọi LLM bị hủy theo, không t�
   assert.equal(await p, 'aborted'); await new Promise((r) => setTimeout(r, 200));
   assert.ok(fake.closed >= 1, 'kết nối tới LLM phải đóng'); assert.equal((await client.getProgress()).totals.turns, 0);
 });
-test('LLM lệch định dạng: không có thẻ → vẫn hiển thị như tiếng Việt; JSON hỏng giữa luồng bị bỏ qua', async () => {
+test('LLM lệch định dạng: plain text hợp lệ; JSON hỏng giữa luồng không được commit', async () => {
   reset('plain'); let c = (await start()).client; let r = await run(c, msg('Bác ơi, giá ạ?'));
   assert.equal(viText(r.events), 'Dạ, bác nghe đây.'); assert.equal(r.outcome, 'done'); assert.ok(!r.events.some((e) => e.type === 'user_translation'));
-  reset('garbled'); c = (await start()).client; r = await run(c, msg('Bác ơi, giá ạ?')); assert.equal(r.outcome, 'done');
+  reset('garbled'); c = (await start()).client; r = await run(c, msg('Bác ơi, giá ạ?')); assert.equal(r.outcome, 'error');
+  assert.equal((await c.getProgress()).totals.turns, 0);
 });
 test('/health: báo chế độ, không chứa khóa; CORS theo CORS_ORIGIN', async () => {
   reset(); const { base } = await start({ corsOrigin: 'https://app.example.com' });
@@ -332,12 +394,15 @@ test('legacy client ignores LLM UI; web open can generate UI without counting a 
 });
 
 test('failed generation preserves submitted form for retry; completed submission consumes it', async () => {
-  reset(); const { client } = await start(); fake.reply = uiReply(generated());
+  let now = 0;
+  reset(); const { client } = await start({ engine: { limiter: new RateLimiter(100, () => now) } }); fake.reply = uiReply(generated());
   const form = formFrom((await run(client, { ...msg('Choose'), interactive: true })).events);
   const action = { ...msg('Phở'), interactive: true, interaction: { formId: form.formId, values: { dish: 'Phở' } } };
   fake.mode = '429';
   assert.equal((await run(client, action)).outcome, 'error');
   fake.mode = 'ok'; fake.reply = '<vi>Được.</vi><en>Okay.</en>';
+  assert.equal((await run(client, { ...action, requestId: 'too-soon' })).outcome, 'error');
+  now = 60001;
   assert.equal((await run(client, { ...action, requestId: 'retry-action' })).outcome, 'done');
   await assert.rejects(run(client, { ...action, requestId: 'replay-action' }), (e: any) => e.status === 409);
 });
@@ -358,7 +423,7 @@ test('long conversation retains valid UI and the latest answer with bounded cont
     assert.equal(r.outcome, 'done'); form = formFrom(r.events);
     assert.equal(form.title, `Decision ${i}`);
     const messages = fake.requests.at(-1)!.body.messages;
-    assert.ok(messages.length <= 8);
+    assert.ok(messages.length <= 9);
     assert.ok(messages.slice(1, -1).reduce((n: number, m: any) => n + m.content.length, 0) <= 10_000);
     if (i) assert.ok(messages.at(-1).content.includes('Phở'));
   }
@@ -408,4 +473,164 @@ test('Groq GPT-OSS uses documented completion budget and low reasoning; other pr
     if (baseUrl.includes('api.groq.com')) { assert.equal(body.max_completion_tokens, 2400); assert.equal(body.reasoning_effort, 'low'); assert.equal(body.include_reasoning, false); assert.equal(body.max_tokens, undefined); }
     else { assert.equal(body.max_tokens, 2400); assert.equal(body.reasoning_effort, undefined); }
   }
+});
+
+test('T215: UI-only output recovers once without leaking abandoned translation/UI', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { fetchImpl: async () => {
+    const content = ++calls === 1 ? `<en>Abandoned translation</en><ui>${JSON.stringify(generated('Abandoned UI'))}</ui>` : uiReply(generated('Recovered UI'));
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`);
+  } } });
+  const r = await run(client, { ...msg('Help choose'), interactive: true });
+  assert.equal(calls, 2); assert.equal(r.outcome, 'done');
+  assert.equal(formFrom(r.events).title, 'Recovered UI');
+  assert.ok(!JSON.stringify(r.events).includes('Abandoned'));
+  assert.equal(r.events.filter((e) => e.type === 'done').length, 1);
+  assert.equal((await client.getProgress()).totals.turns, 1);
+});
+
+test('T215: repeated empty output stops after two calls and commits nothing', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { fetchImpl: async () => { calls++; return new Response('data: [DONE]\n\n'); } } });
+  const r = await run(client, { ...msg('Help choose'), interactive: true });
+  assert.equal(calls, 2); assert.equal(r.outcome, 'error');
+  assert.equal((await client.getProgress()).totals.turns, 0);
+});
+
+test('T215: empty recovery obeys rate limiter without a second provider call', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { limiter: new RateLimiter(1), fetchImpl: async () => { calls++; return new Response('data: [DONE]\n\n'); } } });
+  const r = await run(client, { ...msg('Help choose'), interactive: true });
+  assert.equal(calls, 1); assert.equal(r.outcome, 'error');
+  assert.ok(JSON.stringify(r.events).includes('Too many AI requests'));
+});
+
+test('T216: early network failure recovers once, commits once; repeated failure stops', async () => {
+  for (const recover of [true, false]) {
+    let calls = 0;
+    const { client } = await start({ engine: { fetchImpl: async () => {
+      calls++;
+      if (calls === 1 || !recover) throw new TypeError('fetch failed');
+      return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: FULL } }] })}\n\ndata: [DONE]\n\n`);
+    } } });
+    const r = await run(client, { ...msg('Continue'), interactive: true });
+    assert.equal(calls, 2); assert.equal(r.outcome, recover ? 'done' : 'error');
+    assert.equal((await client.getProgress()).totals.turns, recover ? 1 : 0);
+  }
+});
+
+test('T216: network after spoken text never replays the response', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { fetchImpl: async () => {
+    calls++;
+    return new Response(new ReadableStream({ start(c) {
+      c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"<vi>Được rồi"}}]}\n\n'));
+      setTimeout(() => c.error(new Error('connection lost')), 20);
+    } }));
+  } } });
+  const r = await run(client, { ...msg('Continue'), interactive: true });
+  assert.equal(calls, 1); assert.equal(r.outcome, 'error'); assert.equal(viText(r.events), 'Được rồi');
+  assert.equal((await client.getProgress()).totals.turns, 0);
+});
+
+test('T216: abort during network backoff prevents another provider call', async () => {
+  const ac = new AbortController(); let calls = 0;
+  const { client } = await start({ engine: { fetchImpl: async () => { calls++; setTimeout(() => ac.abort(), 40); throw new TypeError('network'); } } });
+  const r = await run(client, { ...msg('Continue'), interactive: true }, { signal: ac.signal });
+  assert.equal(r.outcome, 'aborted'); await new Promise(r => setTimeout(r, 850)); assert.equal(calls, 1);
+});
+
+test('T216: older free-text payment decision remains user data after 14 turns', () => {
+  const u = newUser(); pushHistory(u, 'renting', [{ role: 'user', text: 'Mình trả tiền mặt nhé.' }]);
+  for (let i = 0; i < 14; i++) pushHistory(u, 'renting', [{ role: 'user', text: `Question ${i}` }, { role: 'assistant', text: `Answer ${i}` }]);
+  const result = resolveAddressTerms({ learner: { age: 28 }, counterpart: { gender: 'male', ageRange: 'over50' }, relationship: 'landlord' }, rules);
+  const m = buildMessages({ scenario: renting, profile: u.profile, result, history: u.history.renting, userMessage: 'More napkins please', interactive: true });
+  assert.ok(m.some(x => x.role === 'user' && x.content.includes('Mình trả tiền mặt nhé.')));
+  assert.ok(!m[0].content.includes('Mình trả tiền mặt nhé.'));
+  assert.ok(m.slice(1, -1).reduce((n,x) => n+x.content.length,0) <= 10000);
+});
+
+test('T216: network recovery obeys limiter and shares empty-recovery attempt cap', async () => {
+  for (const limited of [true, false]) {
+    let calls = 0;
+    const { client } = await start({ engine: { limiter: new RateLimiter(limited ? 1 : 100), fetchImpl: async () => {
+      if (++calls === 1) throw new TypeError('network');
+      return new Response('data: [DONE]\n\n');
+    } } });
+    const r = await run(client, { ...msg('Continue'), interactive: true });
+    assert.equal(r.outcome, 'error'); assert.equal(calls, limited ? 1 : 2);
+    assert.equal((await client.getProgress()).totals.turns, 0);
+  }
+});
+
+test('T216: assistant UI history is context, not a reply-shaped form template', () => {
+  const result = resolveAddressTerms({ learner: { age: 28 }, counterpart: { gender: 'male', ageRange: 'over50' }, relationship: 'landlord' }, rules);
+  const text = 'Chọn nhé.\nInteractive question: ' + JSON.stringify(generated('Payment'));
+  const m = buildMessages({ scenario: renting, profile: newUser().profile, result, history: [{ role: 'assistant', text }], userMessage: 'Có trà đá không?', interactive: true });
+  assert.ok(!m[1].content.includes('Interactive question:'));
+  assert.ok(!m[1].content.includes('"fields":'));
+  assert.ok(m[1].content.includes('Previously displayed UI context'));
+  assert.ok(m[1].content.includes('Phở'));
+});
+
+test('T217: Retry-After seconds/date and malformed bounds are safe', () => {
+  const now = Date.UTC(2026, 10, 18, 0, 0, 0);
+  assert.equal(retryAfterDelay('12', now), 12000);
+  assert.equal(retryAfterDelay(new Date(now + 90000).toUTCString(), now), 90000);
+  for (const raw of [null, '', 'secret-key', '-2', 'NaN', '1.2', new Date(now - 1000).toUTCString()]) assert.equal(retryAfterDelay(raw, now), 60000);
+  assert.equal(retryAfterDelay('0', now), 1000);
+  assert.equal(retryAfterDelay('9999999999', now), 86400000);
+});
+
+test('T217: cooldown and local RPM expire independently and never shorten an existing block', () => {
+  let now = 0; const limiter = new RateLimiter(1, () => now);
+  assert.ok(limiter.tryAcquire()); limiter.blockFor(90000); limiter.blockFor(1000);
+  now = 60001; assert.equal(limiter.tryAcquire(), false); assert.equal(limiter.retryAfterMs(), 29999);
+  now = 90000; assert.equal(limiter.retryAfterMs(), 0); assert.ok(limiter.tryAcquire());
+  assert.equal(limiter.retryAfterMs(), 60000);
+});
+
+test('T217: provider 429 blocks other users without provider or budget calls; recovers after deadline', async () => {
+  let now = 0; let calls = 0; let reservations = 0;
+  class CountingBudget extends DailyBudget { override tryReserve(chars: number) { reservations++; return super.tryReserve(chars); } }
+  const { client, base } = await start({ engine: { limiter: new RateLimiter(100, () => now), budget: new CountingBudget(0), fetchImpl: async () => {
+    if (++calls === 1) return new Response('private provider details', { status: 429, headers: { 'retry-after': '90' } });
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: FULL } }] })}\n\ndata: [DONE]\n\n`);
+  } } });
+  const first = await run(client, { ...msg('Hello'), interactive: true });
+  assert.equal(first.outcome, 'error'); assert.ok(JSON.stringify(first.events).includes('90 seconds'));
+  const other = createFacadeClient({ baseUrl: base, anonymousId: 't217-another-learner' });
+  now = 30000;
+  const blocked = await run(other, { ...msg('Hello'), interactive: true });
+  assert.equal(blocked.outcome, 'error'); assert.ok(JSON.stringify(blocked.events).includes('60 seconds'));
+  assert.equal(calls, 1); assert.equal(reservations, 1);
+  assert.equal((await client.getProgress()).totals.turns, 0); assert.equal((await other.getProgress()).totals.turns, 0);
+  now = 90000;
+  assert.equal((await run(other, { ...msg('Hello'), interactive: true })).outcome, 'done');
+  assert.equal(calls, 2); assert.equal(reservations, 2);
+});
+
+test('T217: schema repair 429 also starts the shared cooldown', async () => {
+  let calls = 0;
+  const { client } = await start({ engine: { limiter: new RateLimiter(100), fetchImpl: async () => {
+    if (++calls === 1) return new Response('data: {"choices":[{"delta":{"content":"<vi>Chọn nhé.</vi><ui>{broken}</ui>"}}]}\n\ndata: [DONE]\n\n');
+    return new Response('', { status: 429, headers: { 'retry-after': '30' } });
+  } } });
+  assert.equal((await run(client, { ...msg('Choose'), interactive: true })).outcome, 'error');
+  assert.equal((await run(client, { ...msg('Try again'), interactive: true })).outcome, 'error');
+  assert.equal(calls, 2); assert.equal((await client.getProgress()).totals.turns, 0);
+});
+
+test('T218: provider-generated comparison survives validation and selected option reaches the model', async () => {
+  reset(); fake.chunkSize = 2048;
+  const {client} = await start();
+  const comparison = generated('Compare two dishes');
+  comparison.fields[0] = { ...comparison.fields[0], presentation: 'comparison', optionDetails: comparison.fields[0].options.map((option: string) => ({ option, description: 'Practice option', facts: [{ label: 'Serving', value: option === 'Phở' ? 'Warm broth' : 'With herbs' }, { label: 'Texture', value: 'Rice noodles' }] })) };
+  fake.reply = uiReply(comparison);
+  const r = await run(client, {...msg('Compare two dishes'),interactive:true});
+  assert.equal(r.outcome,'done'); const form=formFrom(r.events);
+  assert.equal(form.fields[0].presentation,'comparison'); assert.equal(form.fields[0].optionDetails[0].facts[0].value,'Warm broth');
+  fake.reply='<vi>Phở không cay nhé.</vi><en>Non-spicy pho, then.</en>';
+  const next=await run(client,{...msg('Selected Phở'),interactive:true,interaction:{formId:form.formId,values:{dish:'Phở'}}});
+  assert.equal(next.outcome,'done'); assert.ok(fake.requests.at(-1).body.messages.at(-1).content.includes('Phở'));
 });
