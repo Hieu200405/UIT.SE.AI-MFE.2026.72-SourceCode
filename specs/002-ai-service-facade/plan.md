@@ -1,5 +1,12 @@
 # Facade — Plan nghiệm thu
 
+## T217
+T218 Files/AC tại ../003-chat-remote/tasks.md. Prompt mô tả comparison/facts, yêu cầu tiêu chí nhất quán, giữ giá/chi tiết hội thoại; validator dùng chung xử lý schema, repair hiện có giữ giới hạn quota.
+Adapter parse Retry-After delta-seconds hoặc HTTP-date, fallback 60s, clamp 24h. LlmError thêm retryAfterMs tùy chọn nội bộ, contract SSE giữ nguyên. RateLimiter thêm blockFor/retryAfterMs, dùng clock inject để test. Engine acquire chung cho initial/recovery/repair; catch 429 cập nhật limiter; thông báo chỉ dùng thời gian, không header/response thô.
+
+## T216
+Recovery trong engine để mọi attempt qua limiter/budget. Delay 750ms dùng timer có AbortSignal; không retry ở adapter nên tránh nhân số attempts. Memory user cũ nguyên văn (bao gồm text, không chỉ ui_response) cùng giới hạn hiện tại; ưu tiên mới nhất. Prompt giữ quyền quyết định UI của model. Kiểm chứng test provider và Groq thật riêng.
+
 ## T215
 Output không có lời thoại: buffer các event dịch/UI cho tới khi có vi; nếu EOF thành công nhưng vi rỗng, bỏ toàn bộ parser state và gọi lại đúng một lần với chỉ dẫn format, vẫn tính limiter/budget. Không retry transport/HTTP, không gửi lại lời thoại đã xuất hiện. Schema repair vẫn tối đa một lần riêng.
 Parse terminal SSE [DONE]/finish_reason stop, xử lý CRLF qua ranh giới chunk; hủy reader trong finally. Deadline tổng độc lập idle timer, không bị heartbeat kéo dài. Store giữ tối đa 48 tin; prompt giữ 6 tin gần nhất trong 7000 ký tự và tối đa 3000 ký tự lựa chọn UI cũ, nguyên bản, mới nhất trước khi giới hạn, không tóm tắt bằng LLM hoặc suy ra lựa chọn. Bổ sung regression cho ngắt luồng/abort/deadline và lựa chọn cũ.

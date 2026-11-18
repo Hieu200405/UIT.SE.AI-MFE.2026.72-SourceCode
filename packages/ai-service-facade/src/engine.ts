@@ -32,8 +32,11 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
   const chars = messages.reduce((n, m) => n + m.content.length, 0);
   const outputLimit = opts.llm.maxTokens ?? (interactive ? 2400 : 220);
   let started = false;
+  const acquire = () => {
+    if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429, opts.limiter?.retryAfterMs());
+  };
   try {
-    if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429);
+    acquire();
     if (!(opts.budget?.tryReserve(chars + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
     let parser = new ReplyParser(); let userEn = ''; let vi = ''; let ui = ''; let uiTooLarge = false; let lastUiPulse = Date.now();
     const flushUserEn = function* (): Generator<PlanStep> {
@@ -57,10 +60,11 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
         else yield step({ type: 'text_delta', requestId: rid, partId: 'p1', text: '', translation: p.text });
       }
     };
+    let recovery: 'empty' | 'network' = 'empty';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const attemptMessages = attempt ? [...messages, { role: 'user' as const, content: 'The previous generation contained no spoken reply. Answer the last learner message or submitted choices now. Begin with <vi>one short Vietnamese in-character reply</vi><en>its English translation</en>. Only then optionally append a valid <ui> block. Do not output UI alone.' }] : messages;
+      const attemptMessages = attempt && recovery === 'empty' ? [...messages, { role: 'user' as const, content: 'The previous generation contained no spoken reply. Answer the last learner message or submitted choices now. Begin with <vi>one short Vietnamese in-character reply</vi><en>its English translation</en>. Only then optionally append a valid <ui> block. Do not output UI alone.' }] : messages;
       if (attempt) {
-        if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429);
+        acquire();
         if (!(opts.budget?.tryReserve(attemptMessages.reduce((sum, m) => sum + m.content.length, 0) + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
         parser = new ReplyParser(); userEn = ''; vi = ''; ui = ''; uiTooLarge = false;
       }
@@ -71,7 +75,23 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
           else pending.push(event);
         }
       };
-      for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, attemptMessages, signal, opts.fetchImpl)) yield* emit(parser.push(delta));
+      try {
+        for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, attemptMessages, signal, opts.fetchImpl)) yield* emit(parser.push(delta));
+      } catch (err) {
+        if (attempt === 0 && !vi.trim() && !signal?.aborted && err instanceof LlmError && err.code === 'network') {
+          recovery = 'network';
+          console.info('[facade] LLM recovery: network_before_dialogue');
+          await new Promise<void>((resolve) => {
+            const finish = () => { clearTimeout(timer); signal?.removeEventListener('abort', finish); resolve(); };
+            const timer = setTimeout(finish, 750);
+            signal?.addEventListener('abort', finish, { once: true });
+            if (signal?.aborted) finish();
+          });
+          if (signal?.aborted) return;
+          continue;
+        }
+        throw err;
+      }
       yield* emit(parser.end());
       if (signal?.aborted) return;
       if (vi.trim()) { yield* flushUserEn(); break; }
@@ -90,7 +110,7 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
           { role: 'assistant' as const, content: `<vi>${vi}</vi><ui>${ui}</ui>` },
           { role: 'user' as const, content: 'Your UI failed schema validation. Return ONLY a corrected JSON object matching the UI schema above, no tags or markdown. Keep the same question and choices. Use English labels. Use 1-5 fields, choice/select options must be strings. Omit optional metadata if uncertain. If no input is useful, return null. Do not repeat dialogue.' }];
         const repairChars = repairMessages.reduce((n, m) => n + m.content.length, 0);
-        if (!(opts.limiter?.tryAcquire() ?? true)) throw new LlmError('rate_limit', true, 429);
+        acquire();
         if (!(opts.budget?.tryReserve(repairChars + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
         let repaired = '';
         for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, repairMessages, signal, opts.fetchImpl)) {
@@ -110,6 +130,7 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
   } catch (err) {
     if (signal?.aborted) return;
     const e = err instanceof LlmError ? err : new LlmError('internal', true);
+    if (e.code === 'http_429') opts.limiter?.blockFor(e.retryAfterMs ?? 60000);
     console.error(`[facade] LLM lỗi: ${e.code}`);
     if (!started && opts.fallback === 'mock') {
       if (interactive) yield step({ type: 'text_delta', requestId: rid, partId: 'fallback-mode', text: 'The AI service is unavailable. This is a sample scripted reply; interactive questions are unavailable for this turn.' });

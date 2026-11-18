@@ -14,6 +14,10 @@ const spiceBase = form('How spicy?', 'Let’s adapt the order to your preference
   { id: 'phrase', label: 'Try saying your order', kind: 'textarea', required: false },
 ]);
 const spice = { ...spiceBase, summary: [{ label: 'Practice order', value: 'Your selected noodles' }] };
+const comparison = form('Compare your options', 'Two practice dishes, with the same details to help you choose.', [{ id: 'meal', label: 'Your dish', kind: 'choice', required: true, presentation: 'comparison', options: ['Phở', 'Bún'], optionDetails: [
+  { option: 'Phở', description: 'A warming noodle bowl', icon: 'bowl', facts: [{ label: 'Serving', value: 'In warm broth' }, { label: 'Texture', value: 'Soft flat noodles' }] },
+  { option: 'Bún', description: 'A lighter noodle option', icon: 'basket', facts: [{ label: 'Serving', value: 'With fresh herbs' }, { label: 'Texture', value: 'Thin round noodles' }] },
+] }]);
 const room = form('What matters in your room?', 'Tell me what you need before we practice asking the landlord.', [
   { id: 'priority', label: 'Your priority', kind: 'choice', required: true, options: ['Quiet', 'Near transport'], presentation: 'compact' },
 ]);
@@ -30,7 +34,8 @@ const server = createFacade({ scenarios, rules: loadRules(), delayScale: 0, engi
       const meal = response.answers.find((a: any) => a.field === 'meal')?.value;
       output = meal ? text(`Bạn chọn ${meal}. Bạn muốn ăn cay không?`, `You chose ${meal}. Would you like it spicy?`, spice)
         : text('Được rồi, mình tiếp tục nhé.', 'All right, let’s continue.');
-    } else if (latest.toLowerCase().includes('noodles')) output = text('Bạn muốn ăn món nào?', 'Which dish would you like?', dish);
+    } else if (latest.toLowerCase().includes('compare')) output = text('Phở có nước dùng nóng, bún ăn kèm rau. Bạn thích món nào?', 'Pho comes in warm broth; bun is served with herbs. Which do you prefer?', comparison);
+    else if (latest.toLowerCase().includes('noodles')) output = text('Bạn muốn ăn món nào?', 'Which dish would you like?', dish);
     else if (latest.toLowerCase().includes('room')) output = text('Bạn cần phòng như thế nào?', 'What kind of room do you need?', room);
     else if (latest === 'invalid ui') output = '<vi>Bạn có thể trả lời ở đây.</vi><en>You can answer here.</en><ui>{broken}</ui>';
     const slow = latest === 'slow noodles';

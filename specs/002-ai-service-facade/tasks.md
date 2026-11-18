@@ -1,5 +1,17 @@
 # Facade — Tasks nghiệm thu
 
+T218: UI so sánh và lời thoại tự nhiên, Files/AC tại ../003-chat-remote/tasks.md; triển khai trên codex/t218-rich-agent-ui, giữ các thay đổi T216/T217 chưa commit.
+
+## T217 — Tôn trọng thời gian chờ của provider (2026-11-18)
+- Files: specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/ai-service-facade/src/{llm,engine}.ts; packages/ai-service-facade/test/llm.test.ts; docs/acceptance/provider-cooldown.md.
+- AC: HTTP429 đọc Retry-After dạng giây/ngày HTTP; header thiếu/sai dùng 60s, giới hạn tối đa 24h; limiter dùng chung giữ cooldown, không gọi provider hoặc reserve budget khi bị chặn; hết hạn gọi được; message thời gian còn lại; không tự retry429, không commit lượt lỗi. Test deterministic, build/lint/typecheck/E2E. Không gây 429 thật để kiểm thử, không secret/dependency mới.
+- Kết quả: 177/177 tests (LLM 52/52), E2E 27/27, build/lint/typecheck pass. Bằng chứng/giới hạn tại docs/acceptance/provider-cooldown.md. Không gọi Groq mới trong T217, không commit/push; giữ thay đổi T216 có sẵn.
+
+## T216 — Network recovery và tránh hỏi lặp (2026-11-18)
+- Files: specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/ai-service-facade/src/{engine,prompt,llm}.ts; packages/ai-service-facade/test/llm.test.ts; scripts/verify-live-ui.cjs; docs/acceptance/agent-network-dialogue.md.
+- AC: retry network tối đa một lần trước khi xuất lời thoại, chung ngân sách recovery empty, delay hủy được, không retry HTTP/429/timeout hoặc partial speech; không double commit. Giữ câu trả lời text cũ trong ngân sách memory, prompt không ép hỏi tiếp/thanh toán khi người học hỏi khác. Test hồi quy và browser Groq 10 followups, ghi rõ lỗi và giới hạn nếu có.
+- Kết quả: npm test 173/173, LLM 48/48; Groq cuối 10/10 followups, không Retry/error, không hỏi lại thanh toán sau chọn tiền mặt, không lộ UI JSON; chi tiết và các lần live thất bại giữ tại docs/acceptance/agent-network-dialogue.md. Chưa commit/push/PR.
+
 ## T215 — Ổn định hội thoại Agent (user giao 2026-11-17)
 - Files: specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/ai-service-facade/src/{llm,prompt,store,engine}.ts; packages/ai-service-facade/test/llm.test.ts; docs/acceptance/agent-stability.md.
 - AC: ngắt SSE không có terminal không được done/commit; stream có heartbeat vẫn hết hạn tổng; abort trước request không gọi provider; dọn reader khi lỗi/hủy; lựa chọn UI đã commit còn trong context sau hơn 6 tin, bounded và không nâng thành system instruction; reset phiên xóa lịch sử; build/lint/typecheck/test pass. Kiểm chứng LLM thật nếu môi trường sẵn sàng, ghi rõ giới hạn.

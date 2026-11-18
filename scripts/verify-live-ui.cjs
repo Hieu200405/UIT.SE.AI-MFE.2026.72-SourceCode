@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const facade = process.env.LIVE_FACADE_URL || 'http://localhost:4000';
 const host = process.env.LIVE_HOST_URL || 'http://localhost:3000';
-const output = path.resolve('test-results/live-llm');
+const output = path.resolve(process.env.LIVE_OUTPUT_DIR || 'test-results/live-llm');
+const paceMs = Math.min(60000, Math.max(5000, Number(process.env.LIVE_PACE_MS) || 5000));
 const events = [];
 const pending = [];
 let browser;
@@ -32,25 +33,32 @@ const report = { status: 'not_run', checks: { recoveredErrors: [] }, events, err
     if (await page.getByTestId('chat-error').count()) {
       const error = await page.getByTestId('chat-error').innerText();
       const retry = page.getByTestId('chat-error').getByRole('button', { name: 'Retry', exact: true });
-      if (process.env.LIVE_RETRY_ONCE === '1' && await retry.count()) {
+      if (process.env.LIVE_RETRY_ONCE === '1' && /connection to the AI service was lost|AI connection ended/.test(error) && await retry.count()) {
         await page.waitForTimeout(2000); await retry.click();
         await page.getByTestId('replying').waitFor({ state: 'hidden', timeout: 90000 });
         if (!await page.getByTestId('chat-error').count()) { report.checks.recoveredErrors.push(error); return; }
       }
       throw new Error(error);
     }
+    const speech = await page.getByTestId('agent-text').last().innerText().catch(() => '');
+    if (/Interactive question:|"fields"\s*:|<\/?(?:vi|en|ui)>/.test(speech)) throw new Error('Protocol/UI metadata leaked into visible dialogue.');
   };
   await page.goto(host + '/chat?facade=' + encodeURIComponent(facade) + '&streamTimeout=45000');
   await page.getByTestId('scenario-street_food').click();
   await page.getByTestId('agent-text').first().or(page.getByTestId('chat-error')).first().waitFor({ timeout: 90000 });
   await done();
-  await page.getByLabel('Your reply').fill('I want to practise ordering food. I am not sure what to choose. Could you help me choose a dish and how spicy to make it?');
+  await page.waitForTimeout(paceMs);
+  await page.getByLabel('Your reply').fill(process.env.LIVE_COMPARISON === '1' ? 'Please compare phở bò and bánh mì thịt by texture and how they are served so I can pick one. I want it not spicy.' : 'I want to practise ordering food. I am not sure what to choose. Could you help me choose a dish and how spicy to make it?');
   await page.getByTestId('send-button').click();
   await done();
   const forms = page.getByTestId('scenario-form');
   const count = await forms.count();
   if (!count) throw new Error('The model did not produce a valid interactive UI for this conversation.');
   const form = forms.last();
+  if (process.env.LIVE_COMPARISON === '1') {
+    if (!await form.locator('[class~="chat:comparison-grid"]').count()) throw new Error('Expected a model-generated comparison, but no comparison UI was returned.');
+    report.checks.comparison = await form.innerText();
+  }
   if (!(await form.getByRole('button', { name: 'Submitted', exact: true }).count()) && await form.locator('button[type=submit]').isEnabled()) {
     const controls = await form.locator('select,input,textarea').count();
     const radioNames = new Set();
@@ -68,7 +76,15 @@ const report = { status: 'not_run', checks: { recoveredErrors: [] }, events, err
     }
     await form.screenshot({ path: path.join(output, 'generated-ui.png') });
     report.checks.generatedUI = await form.innerText();
+    if (process.env.LIVE_COMPARISON === '1') {
+      report.checks.selectionPreview = await form.getByTestId('selection-preview').innerText();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await form.screenshot({ path: path.join(output, 'comparison-mobile.png') });
+      if (!await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)) throw new Error('Comparison overflows mobile viewport.');
+      await page.setViewportSize({ width: 1280, height: 900 });
+    }
     const before = await page.getByTestId('msg-agent').count();
+    await page.waitForTimeout(paceMs);
     await form.locator('button[type=submit]').click();
     await done();
     if (await page.getByTestId('msg-agent').count() <= before) throw new Error('No agent reply after interaction.');
@@ -77,11 +93,12 @@ const report = { status: 'not_run', checks: { recoveredErrors: [] }, events, err
     report.checks.extendedDialogue = [];
     const followups = Math.min(12, Math.max(0, Number(process.env.LIVE_FOLLOWUP_TURNS || 0)));
     for (let turn = 0; turn < followups; turn++) {
-      const prompts = ['Ăn ở đây, cho thêm rau nhé.', 'Có trà đá không?', 'Cho một ly thôi, ít đá.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.', 'Món này có hành không?', 'Lần sau mình muốn thử món khác. Có món nào nữa?', 'Giúp mình chọn hai món để so sánh nhé.', 'Giữ món không cay nhé.'];
+      await page.waitForTimeout(paceMs);
+      const prompts = process.env.LIVE_COMPARISON === '1' ? ['Ăn ở đây, cho thêm rau nhé.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.'] : ['Ăn ở đây, cho thêm rau nhé.', 'Có trà đá không?', 'Cho một ly thôi, ít đá.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.', 'Món này có hành không?', 'Lần sau mình muốn thử món khác. Có món nào nữa?', 'Giúp mình chọn hai món để so sánh nhé.', 'Giữ món không cay nhé.'];
       await page.getByLabel('Your reply').fill(prompts[turn % prompts.length]);
       await page.getByTestId('send-button').click(); await done();
       report.checks.extendedDialogue.push({ turn: turn + 1, prompt: prompts[turn % prompts.length], reply: await page.getByTestId('msg-agent').last().innerText() });
-      await page.waitForTimeout(5000);
+      fs.writeFileSync(path.join(output, 'progress.json'), JSON.stringify({ status: 'running', completedFollowups: turn + 1, dialogue: report.checks.extendedDialogue }, null, 2));
     }
     if (followups) await page.screenshot({ path: path.join(output, 'long-conversation.png'), fullPage: true });
     report.status = 'passed';
@@ -93,8 +110,8 @@ const report = { status: 'not_run', checks: { recoveredErrors: [] }, events, err
     await page.screenshot({ path: path.join(output, 'failure.png'), fullPage: true }).catch(() => {});
   }
 }).finally(async () => {
-  await browser?.close();
   await Promise.allSettled(pending);
+  await browser?.close();
   fs.mkdirSync(output, { recursive: true });
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ status: report.status, error: report.error, report: path.join(output, 'report.json') }));

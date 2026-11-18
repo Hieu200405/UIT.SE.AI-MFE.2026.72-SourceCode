@@ -4,7 +4,7 @@
  * reply suggestion có translation, needs_clarification, error có retryable.
  */
 
-export const CONTRACT_VERSION = '0.8.0';
+export const CONTRACT_VERSION = '0.9.0';
 
 export interface ScenarioFormData {
   formId: string;
@@ -12,7 +12,7 @@ export interface ScenarioFormData {
   description: string;
   submitLabel: string;
   summary?: Array<{ label: string; value: string }>;
-  fields: Array<{ id: string; label: string; kind: 'choice' | 'select' | 'text' | 'textarea'; required: boolean; options?: string[]; presentation?: 'cards' | 'compact'; optionDetails?: Array<{ option: string; description: string; badge?: string; icon?: 'bowl' | 'home' | 'basket' | 'bank' | 'speech' | 'document' }> }>;
+  fields: Array<{ id: string; label: string; kind: 'choice' | 'select' | 'text' | 'textarea'; required: boolean; options?: string[]; presentation?: 'cards' | 'compact' | 'comparison'; optionDetails?: Array<{ option: string; description: string; badge?: string; icon?: 'bowl' | 'home' | 'basket' | 'bank' | 'speech' | 'document'; facts?: Array<{ label: string; value: string }> }> }>;
 }
 export interface FormInteraction { formId: string; values: Record<string, string> }
 
@@ -79,6 +79,9 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const optionalStrings = (v: unknown): boolean => v === undefined || (Array.isArray(v) && v.every(isStr));
 const boundedText = (v: unknown, max: number): v is string => isStr(v) && v.trim().length > 0 && v.length <= max;
 const onlyKeys = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every((k) => keys.includes(k));
+const validFacts = (v: unknown): boolean => Array.isArray(v) && v.length >= 2 && v.length <= 4 &&
+  v.every((r) => isObj(r) && onlyKeys(r, ['label', 'value']) && boundedText(r.label, 60) && boundedText(r.value, 120) && !/\{\{|\$\{/.test(r.value)) &&
+  new Set(v.map((r) => r.label.trim().toLowerCase())).size === v.length;
 
 /** Strict schema shared by the LLM boundary and renderer; no arbitrary props. */
 export function validateScenarioForm(v: unknown): v is ScenarioFormData {
@@ -90,8 +93,14 @@ export function validateScenarioForm(v: unknown): v is ScenarioFormData {
     if (!isObj(f) || !onlyKeys(f, ['id', 'label', 'kind', 'required', 'options', 'presentation', 'optionDetails']) ||
       !isStr(f.id) || !/^[a-z][a-z0-9_]{0,30}$/.test(f.id) || ['constructor', 'prototype', '__proto__'].includes(f.id) ||
       !boundedText(f.label, 160) || typeof f.required !== 'boolean') return false;
-    if (f.presentation !== undefined && (f.kind !== 'choice' || !['cards', 'compact'].includes(String(f.presentation)))) return false;
-    if (f.optionDetails !== undefined && (f.kind !== 'choice' || !Array.isArray(f.optionDetails) || f.optionDetails.length > 8 || !Array.isArray(f.options) || new Set(f.optionDetails.map((d) => isObj(d) ? d.option : null)).size !== f.optionDetails.length || !f.optionDetails.every((d) => isObj(d) && onlyKeys(d, ['option', 'description', 'badge', 'icon']) && (f.options as unknown[]).includes(d.option) && boundedText(d.description, 180) && (d.badge === undefined || boundedText(d.badge, 40)) && (d.icon === undefined || ['bowl', 'home', 'basket', 'bank', 'speech', 'document'].includes(String(d.icon)))))) return false;
+    if (f.presentation !== undefined && (f.kind !== 'choice' || !['cards', 'compact', 'comparison'].includes(String(f.presentation)))) return false;
+    if (f.optionDetails !== undefined && (f.kind !== 'choice' || !Array.isArray(f.optionDetails) || f.optionDetails.length > 8 || !Array.isArray(f.options) || new Set(f.optionDetails.map((d) => isObj(d) ? d.option : null)).size !== f.optionDetails.length || !f.optionDetails.every((d) => isObj(d) && onlyKeys(d, ['option', 'description', 'badge', 'icon', 'facts']) && (f.options as unknown[]).includes(d.option) && boundedText(d.description, 180) && (d.facts === undefined || validFacts(d.facts)) && (d.badge === undefined || boundedText(d.badge, 40)) && (d.icon === undefined || ['bowl', 'home', 'basket', 'bank', 'speech', 'document'].includes(String(d.icon)))))) return false;
+    if (f.presentation === 'comparison') {
+      if (!Array.isArray(f.optionDetails) || !Array.isArray(f.options) || f.optionDetails.length < 2 || f.optionDetails.length !== f.options.length) return false;
+      const labels = (d: Record<string, unknown>) => Array.isArray(d.facts) ? JSON.stringify(d.facts.map((r) => r.label)) : null;
+      const first = labels(f.optionDetails[0]);
+      if (!first || !f.optionDetails.every((d) => labels(d) === first)) return false;
+    }
     if (f.kind === 'text' || f.kind === 'textarea') return f.options === undefined;
     return (f.kind === 'select' || f.kind === 'choice') && Array.isArray(f.options) && f.options.length >= 2 && f.options.length <= 8 &&
       f.options.every((o) => boundedText(o, 120)) && new Set(f.options).size === f.options.length;

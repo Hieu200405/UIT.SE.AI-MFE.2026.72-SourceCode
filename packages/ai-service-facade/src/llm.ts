@@ -4,23 +4,37 @@ export interface LlmConfig { baseUrl: string; apiKey: string; model: string; tim
 export interface LlmMessage { role: 'system' | 'user' | 'assistant'; content: string }
 
 export class LlmError extends Error {
-  code: string; retryable: boolean; status?: number;
-  constructor(code: string, retryable: boolean, status?: number) { super(code); this.code = code; this.retryable = retryable; this.status = status; }
+  code: string; retryable: boolean; status?: number; retryAfterMs?: number;
+  constructor(code: string, retryable: boolean, status?: number, retryAfterMs?: number) { super(code); this.code = code; this.retryable = retryable; this.status = status; this.retryAfterMs = retryAfterMs; }
   /** Thông điệp an toàn cho người dùng: không lộ chi tiết nhà cung cấp, khóa hay nội dung phản hồi. */
   publicMessage(): string {
     if (this.code === 'daily_budget') return 'The configured daily AI budget has been reached';
-    if (this.code === 'rate_limit' || this.status === 429) return 'Too many AI requests. Please wait a minute before retrying';
+    if (this.code === 'rate_limit' || this.status === 429) return `Too many AI requests. Please try again in ${Math.max(1, Math.ceil((this.retryAfterMs ?? 60000) / 1000))} seconds`;
     if (this.code === 'truncated') return 'The AI reply was cut short. Please retry';
     if (this.code === 'interrupted') return 'The AI connection ended before the reply was complete. Please retry';
     if (this.code === 'invalid_ui') return 'The interactive reply was incomplete. Please retry or answer in chat';
     if (this.code === 'empty') return 'The AI returned no dialogue. Please retry';
     if (this.code === 'timeout') return 'The AI took too long to respond. Please retry';
+    if (this.code === 'network') return 'The connection to the AI service was lost. Please retry';
     if (this.status === 401 || this.status === 403) return 'The AI service isn’t set up correctly';
     return this.retryable ? 'The AI service is busy' : 'The AI service couldn’t answer';
   }
 }
 
 const joinUrl = (base: string, path: string) => base.replace(/\/+$/, '') + path;
+export function retryAfterDelay(value: string | null, now = Date.now()): number {
+  const raw = value?.trim() ?? '';
+  const delay = /^\d+$/.test(raw) ? Number(raw) * 1000 :
+    /^[A-Za-z]{3}, /.test(raw) ? Date.parse(raw) - now : NaN;
+  return Number.isFinite(delay) && delay >= 0 ? Math.min(86400000, Math.max(1000, delay)) : 60000;
+}
+function networkError(error: unknown, phase: 'connect' | 'stream'): LlmError {
+  const e = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  const code = e?.cause?.code ?? e?.code;
+  const allowed = ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'];
+  console.warn(`[facade] network: ${phase}/${typeof code === 'string' && allowed.includes(code) ? code : 'unknown'}`);
+  return new LlmError('network', true);
+}
 
 export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], signal?: AbortSignal, fetchImpl: typeof fetch = fetch): AsyncGenerator<string> {
   if (signal?.aborted) return;
@@ -42,10 +56,10 @@ export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], 
         headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
         body: JSON.stringify({ model: cfg.model, messages, stream: true, temperature: cfg.temperature ?? 0.7, ...limits }),
       });
-    } catch { throw new LlmError(timedOut ? 'timeout' : 'network', true); }
+    } catch (err) { if (signal?.aborted) return; throw timedOut ? new LlmError('timeout', true) : networkError(err, 'connect'); }
     if (!res.ok || !res.body) {
       void res.body?.cancel().catch(() => {});
-      throw new LlmError(`http_${res.status}`, res.status === 429 || res.status >= 500, res.status);
+      throw new LlmError(`http_${res.status}`, res.status === 429 || res.status >= 500, res.status, res.status === 429 ? retryAfterDelay(res.headers.get('retry-after')) : undefined);
     }
     reader = res.body.getReader(); const dec = new TextDecoder();
     let wire = '';
@@ -78,7 +92,7 @@ export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], 
   } catch (e) {
     if (e instanceof LlmError) throw e;
     if (signal?.aborted) return;                                   // client đã hủy: kết thúc êm
-    throw new LlmError(timedOut ? 'timeout' : 'network', true);
+    throw timedOut ? new LlmError('timeout', true) : networkError(e, 'stream');
   } finally {
     clearTimeout(timer); clearTimeout(deadline); signal?.removeEventListener('abort', onAbort);
     ac.abort();
@@ -88,9 +102,19 @@ export async function* streamCompletion(cfg: LlmConfig, messages: LlmMessage[], 
 
 /** Giới hạn số request/phút (free tier có hạn mức RPM). */
 export class RateLimiter {
+  private blockedUntil = 0;
   private hits: number[] = []; private max: number; private now: () => number;
   constructor(maxPerMinute: number, now: () => number = Date.now) { this.max = maxPerMinute; this.now = now; }
+  blockFor(ms: number): void {
+    if (Number.isFinite(ms) && ms > 0) this.blockedUntil = Math.max(this.blockedUntil, this.now() + Math.min(ms, 86400000));
+  }
+  retryAfterMs(): number {
+    const t = this.now(); this.hits = this.hits.filter((x) => t - x < 60_000);
+    const rpmWait = this.hits.length >= this.max ? Math.max(1, (this.hits[0] ?? t) + 60000 - t) : 0;
+    return Math.max(0, this.blockedUntil - t, rpmWait);
+  }
   tryAcquire(): boolean {
+    if (this.retryAfterMs() > 0) return false;
     const t = this.now(); this.hits = this.hits.filter((x) => t - x < 60_000);
     if (this.hits.length >= this.max) return false;
     this.hits.push(t); return true;
