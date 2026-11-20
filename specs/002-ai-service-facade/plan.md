@@ -1,5 +1,8 @@
 # Facade — Plan nghiệm thu
 
+## T219
+ReplyParser theo dõi viCompleted; buffer events trước lời thoại, validate vi tối đa4000 ký tự. dialogue-quality kiểm tra Unicode letter ngoài Latin (giữ dấu tổ hợp/số/emoji), và nhóm câu hỏi kết thúc generic trong ba reply gần nhất; không semantic-dedup câu hỏi nghiệp vụ. Recovery có chỉ dẫn riêng, không promote lịch sử lên system. Lỗi transport với partial vi hợp lệ có thể hiển thị phần dở rồi error như trước; không auto-retry khi đã có vi. Stop không flush. Heartbeat SSE giữ hoạt động khi chờ phần vi.
+
 ## T217
 T218 Files/AC tại ../003-chat-remote/tasks.md. Prompt mô tả comparison/facts, yêu cầu tiêu chí nhất quán, giữ giá/chi tiết hội thoại; validator dùng chung xử lý schema, repair hiện có giữ giới hạn quota.
 Adapter parse Retry-After delta-seconds hoặc HTTP-date, fallback 60s, clamp 24h. LlmError thêm retryAfterMs tùy chọn nội bộ, contract SSE giữ nguyên. RateLimiter thêm blockFor/retryAfterMs, dùng clock inject để test. Engine acquire chung cho initial/recovery/repair; catch 429 cập nhật limiter; thông báo chỉ dùng thời gian, không header/response thô.
@@ -29,3 +32,6 @@ HOW: heartbeat SSE comment mỗi 4s (không giả text/UI), clear khi hoàn tấ
 T213 cập nhật sau kiểm chứng Groq: tái hiện lỗi UI và raw protocol tags trong lời thoại khi model có prose trước thẻ. Parser giữ preamble bounded tới khi gặp tag hoặc EOF; một lần repair JSON qua cùng provider, cùng quota/budget, không stream raw repair. Không tự dựng form khi model lỗi. Nếu repair vẫn sai → error Retry, không commit. Spec/Files T213 bổ sung reply-parser.ts.
 
 T213 Groq GPT-OSS: dùng max_completion_tokens, reasoning_effort=low, include_reasoning=false theo https://console.groq.com/docs/reasoning và /docs/api-reference. Profile chỉ áp dụng api.groq.com + hai model GPT-OSS, provider khác giữ protocol cũ. Summary từ chối template placeholder {{...}}/${...}. Empty output có thông báo riêng.
+
+## T220
+response-quality kiểm tra currency VND có đơn vị rõ ràng, chặn số mới trong câu hỏi chỉ về tổng ngay sau một báo giá duy nhất (không suy đoán giỏ hàng từ nhiều giá/đơn vị). Giữ các assistant quote cũ nguyên văn ở role assistant với giới hạn memory hiện tại. UI language gate kiểm tra dấu tiếng Việt ở explanatory fields sau loại tên lựa chọn, repair cùng pipeline schema. Đây là heuristic bounded, không nhận dạng toàn bộ ngôn ngữ hoặc thay thế ledger; Groq live phải được đánh giá cả nội dung ngoài gate.

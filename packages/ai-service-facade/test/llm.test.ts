@@ -12,6 +12,7 @@ import { SqliteStore } from '../src/sqlite-store.ts';
 import { newUser, pushHistory, startSession, Store } from '../src/store.ts';
 import { DailyBudget, LlmError, RateLimiter, streamCompletion, retryAfterDelay } from '../src/llm.ts';
 import { ReplyParser } from '../src/reply-parser.ts';
+import { dialogueIssue } from '../src/dialogue-quality.ts';
 import { agentTerms, buildMessages } from '../src/prompt.ts';
 import { SCRIPTS, pickCulturalNote } from '../src/scripts.ts';
 import { resolveAddressTerms } from '../../rules-xung-ho/src/index.ts';
@@ -243,9 +244,9 @@ test('LLM treo → hết timeout thì báo lỗi, không chờ vô hạn; chữ 
   assert.equal(outcome, 'error'); assert.equal(viText(events), 'Để bác'); assert.equal((events.at(-1) as any).error.retryable, true);
 });
 test('client hủy giữa chừng → lời gọi LLM bị hủy theo, không tính lượt', async () => {
-  reset('hang'); const { client } = await start({}, { timeoutMs: 5000 });
-  const ac = new AbortController(); let got = 0;
-  const p = client.streamChat(msg('Bác ơi, giá ạ?'), { onEvent: () => { if (++got === 1) setTimeout(() => ac.abort(), 20); }, signal: ac.signal });
+  reset('hang'); const ac = new AbortController();
+  const { client } = await start({ engine: { fetchImpl: async (url, init) => { const response = await fetch(url, init); setTimeout(() => ac.abort(), 20); return response; } } }, { timeoutMs: 5000 });
+  const p = client.streamChat(msg('Bác ơi, giá ạ?'), { onEvent: () => {}, signal: ac.signal });
   assert.equal(await p, 'aborted'); await new Promise((r) => setTimeout(r, 200));
   assert.ok(fake.closed >= 1, 'kết nối tới LLM phải đóng'); assert.equal((await client.getProgress()).totals.turns, 0);
 });
@@ -633,4 +634,145 @@ test('T218: provider-generated comparison survives validation and selected optio
   fake.reply='<vi>Phở không cay nhé.</vi><en>Non-spicy pho, then.</en>';
   const next=await run(client,{...msg('Selected Phở'),interactive:true,interaction:{formId:form.formId,values:{dish:'Phở'}}});
   assert.equal(next.outcome,'done'); assert.ok(fake.requests.at(-1).body.messages.at(-1).content.includes('Phở'));
+});
+
+test('T219: quality gate preserves Vietnamese accents/emoji and only targets generic repeated closers', () => {
+  const history = [{role:'assistant' as const, text:'Đây nhé. Bạn còn muốn gì nữa không?'}];
+  assert.equal(dialogueIssue('Tiền mặt nhé 👍 45.000₫.'.normalize('NFD'),history,'Tiền mặt'),null);
+  assert.equal(dialogueIssue('Mình sẽ給 bạn khăn giấy.',[],''),'mixed_script');
+  assert.equal(dialogueIssue('Bạn muốn gì thêm không?',history,'Khăn giấy'),'repeated_closer');
+  assert.equal(dialogueIssue('Bạn muốn gì thêm không?',history,'Nhắc lại câu hỏi nhé'),null);
+  assert.equal(dialogueIssue('Bạn muốn gì thêm không?',history,"Don't repeat that question"),'repeated_closer');
+  assert.equal(dialogueIssue('Bạn muốn ăn cay không?',[{role:'assistant',text:'Bạn muốn ăn cay không?'}],''),null);
+});
+
+test('T219: mixed script split across chunks is repaired before any dialogue/translation/UI leaks', async () => {
+  let calls=0;
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===1 ? '<vi>Mình sẽ給 bạn khăn giấy.</vi><en>Abandoned translation</en><ui>null</ui>' : '<vi>Khăn giấy đây nhé.</vi><en>Here are the napkins.</en>';
+    return new Response([...content].map(c=>`data: ${JSON.stringify({choices:[{delta:{content:c}}]})}\n\n`).join('')+'data: [DONE]\n\n');
+  }}});
+  const r=await run(client,{...msg('Khăn giấy nhé'),interactive:true});
+  assert.equal(r.outcome,'done'); assert.equal(calls,2); assert.equal(viText(r.events),'Khăn giấy đây nhé.');
+  assert.ok(!JSON.stringify(r.events).includes('給')); assert.ok(!JSON.stringify(r.events).includes('Abandoned'));
+  assert.equal((await client.getProgress()).totals.turns,1);
+});
+
+test('T219: repeated generic closer is rewritten, not silently stripped from speech', async () => {
+  let calls=0;
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls<3 ? '<vi>Đây nhé. Bạn còn muốn gì nữa không?</vi><en>Here. Anything else?</en>' : '<vi>Tổng là 45.000 đồng.</vi><en>The total is 45,000 dong.</en>';
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  assert.equal((await run(client,{...msg('Cho thêm rau'),interactive:true})).outcome,'done');
+  const r=await run(client,{...msg('Tổng bao nhiêu?'),interactive:true});
+  assert.equal(calls,3); assert.equal(r.outcome,'done'); assert.equal(viText(r.events),'Tổng là 45.000 đồng.');
+});
+
+test('T219: repeated quality failure stops at two calls without displaying or committing bad text', async () => {
+  let calls=0;
+  const {client}=await start({engine:{fetchImpl:async()=>{calls++;return new Response('data: {"choices":[{"delta":{"content":"<vi>你好</vi><en>Hi</en>"}}]}\n\ndata: [DONE]\n\n');}}});
+  const r=await run(client,{...msg('Chào bạn'),interactive:true});
+  assert.equal(calls,2); assert.equal(r.outcome,'error'); assert.equal(viText(r.events),'');
+  assert.equal((await client.getProgress()).totals.turns,0);
+});
+
+test('T219: quality recovery respects limiter instead of starting an unbudgeted provider call', async () => {
+  let calls=0;
+  const {client}=await start({engine:{limiter:new RateLimiter(1),fetchImpl:async()=>{calls++;return new Response('data: {"choices":[{"delta":{"content":"<vi>給</vi>"}}]}\n\ndata: [DONE]\n\n');}}});
+  const r=await run(client,{...msg('Khăn giấy'),interactive:true});
+  assert.equal(calls,1); assert.equal(r.outcome,'error'); assert.equal(viText(r.events),'');
+  assert.ok(JSON.stringify(r.events).includes('Too many AI requests'));
+});
+
+// T220: focused regressions for the observed price drift and mixed-language UI.
+test('T220: currency normalization and narrow quote guard do not invent a cart', async () => {
+  const { dongAmounts, changedQuote } = await import('../src/response-quality.ts');
+  assert.deepEqual(dongAmounts('45\u202f000 đ, 10.000 đồng, 55k, 55000 VND'), [45000,10000,55000,55000]);
+  const h = [{role:'assistant' as const,text:'Cho thêm rau nhé, giá 45.000 đ.'}];
+  assert.ok(changedQuote('Tổng cộng 95.000 đ.',h,'Tổng bao nhiêu vậy?'));
+  assert.equal(changedQuote('Tổng 45 nghìn.',h,'Tổng bao nhiêu vậy?'),false);
+  assert.equal(changedQuote('Tổng 90.000 đ.',h,'Cho hai phần'),false);
+  assert.equal(changedQuote('Tổng 90.000 đ.',[{role:'assistant',text:'Mỗi phần 45.000 đ.'}],'Tổng bao nhiêu vậy?'),false);
+});
+
+test('T220: changed total is rewritten before emission; only corrected turn commits', async () => {
+  let calls=0;
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===2 ? '<vi>Tổng cộng 95.000 đ.</vi><en>Wrong total</en>' : '<vi>Giá 45.000 đ nhé.</vi><en>That is 45,000 dong.</en>';
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  await run(client,{...msg('Một phần nhé'),interactive:true});
+  const r=await run(client,{...msg('Tổng bao nhiêu vậy?'),interactive:true});
+  assert.equal(r.outcome,'done'); assert.equal(calls,3); assert.ok(!JSON.stringify(r.events).includes('95.000'));
+  assert.equal((await client.getProgress()).totals.turns,2);
+});
+
+test('T220: UI descriptions are repaired to English while preserving Vietnamese options', async () => {
+  let calls=0;
+  const form=generated('Choose your dish');
+  form.fields[0].optionDetails=form.fields[0].options.map((option:string)=>({option,description:'Noodles mềm, thịt mềm'}));
+  const fixed=structuredClone(form);
+  fixed.fields[0].optionDetails.forEach((d:{description:string})=>d.description='Soft noodles and tender meat');
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===1 ? uiReply(form) : JSON.stringify(fixed);
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  const r=await run(client,{...msg('Compare dishes'),interactive:true});
+  assert.equal(r.outcome,'done'); assert.equal(calls,2);
+  assert.equal(formFrom(r.events).fields[0].optionDetails[0].description,'Soft noodles and tender meat');
+  assert.equal(formFrom(r.events).fields[0].options[0],form.fields[0].options[0]);
+});
+
+test('T220: still-mixed UI after repair is not displayed or committed', async () => {
+  let calls=0; const form=generated('Choose your dish');form.description='Chọn món nhé';
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===1 ? uiReply(form) : JSON.stringify(form);
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  const r=await run(client,{...msg('Compare dishes'),interactive:true});
+  assert.equal(r.outcome,'error'); assert.equal(calls,2);
+  assert.ok(!r.events.some(e=>e.type==='ui_card' && e.card.type==='scenario_form'));
+  assert.equal((await client.getProgress()).totals.turns,0);
+});
+
+test('T220: old quotes survive recent-message truncation within the memory budget', () => {
+  const u=newUser();
+  const history=[{role:'assistant' as const,text:'Giá 45.000 đồng nhé.'},...Array.from({length:12},(_,i)=>({role:(i%2?'assistant':'user') as 'assistant'|'user',text:'Short practice turn '+i}))];
+  const result=resolveAddressTerms({learner:{age:28},counterpart:{gender:'male',ageRange:'over50'},relationship:'landlord'},rules);
+  const messages=buildMessages({scenario:renting,profile:u.profile,result,history,userMessage:'Tổng bao nhiêu vậy?',interactive:true});
+  assert.ok(messages.some(m=>m.role==='assistant' && m.content.includes('45.000 đồng')));
+  assert.ok(!messages[0].content.includes('45.000 đồng'));
+  assert.ok(messages.slice(1,-1).reduce((sum,m)=>sum+m.content.length,0)<=10000);
+});
+
+test('T220: repeated price drift fails without leaking or committing a new total', async () => {
+  let calls=0;
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===1 ? '<vi>Giá 45.000 đ nhé.</vi>' : '<vi>Tổng cộng 95.000 đ.</vi>';
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  await run(client,{...msg('Một phần nhé'),interactive:true});
+  const r=await run(client,{...msg('Tổng bao nhiêu vậy?'),interactive:true});
+  assert.equal(r.outcome,'error'); assert.equal(calls,3); assert.equal(viText(r.events),'');
+  assert.equal((await client.getProgress()).totals.turns,1);
+});
+
+test('T220: comparison facts and badges use English; option names can remain Vietnamese', async () => {
+  const {uiNeedsEnglish}=await import('../src/response-quality.ts');
+  const form={...generated(),formId:'generated-test'};
+  form.fields[0].optionDetails=form.fields[0].options.map((option:string)=>({option,description:'Soft noodles',facts:[{label:'Texture',value:'Noodles mềm'},{label:'Serving',value:'In a bowl'}]}));
+  assert.ok(uiNeedsEnglish(form));
+  form.fields[0].optionDetails.forEach((d:{facts:{label:string,value:string}[]})=>d.facts[0].value='Soft noodles');
+  assert.equal(uiNeedsEnglish(form),false);
+});
+
+test('T220: a single extra price or unit price for multiple servings is not a total anchor', async () => {
+  const {changedQuote}=await import('../src/response-quality.ts');
+  assert.equal(changedQuote('Tổng 55.000 đồng.',[{role:'assistant',text:'Phở 45.000 đồng.'},{role:'user',text:'Thêm trà nhé'},{role:'assistant',text:'Trà 10.000 đồng.'}],'Tổng bao nhiêu vậy?'),false);
+  assert.equal(changedQuote('Tổng 90.000 đồng.',[{role:'user',text:'Hai phần nhé'},{role:'assistant',text:'Phở 45.000 đồng.'}],'Tổng bao nhiêu vậy?'),false);
+  assert.ok(changedQuote('Tổng 95.000 đồng.',[{role:'assistant',text:'Phở 45.000 đồng.'},{role:'assistant',text:'Tổng 55.000 đồng.'}],'Tổng bao nhiêu vậy?'));
+  const quotes=[{role:'assistant' as const,text:'Phở 45.000 đồng, trà 10.000 đồng.'},{role:'assistant' as const,text:'Tổng 55.000 đồng.'}];
+  assert.equal(changedQuote('45.000 đồng + 10.000 đồng = 55.000 đồng.',quotes,'Tổng bao nhiêu vậy?'),false);
+  assert.ok(changedQuote('Tổng 45.000 đồng.',quotes,'Tổng bao nhiêu vậy?'));
 });

@@ -1,5 +1,6 @@
 import type { Profile, Scenario } from '@app/shared-types';
 import type { AddressingResult } from '../../rules-xung-ho/src/index.ts';
+import { dongAmounts } from './response-quality.ts';
 import type { LlmMessage } from './llm.ts';
 
 export interface HistoryItem { role: 'user' | 'assistant'; text: string }
@@ -38,12 +39,14 @@ export function buildMessages(a: { scenario: Scenario; profile: Profile; result:
     `The learner is practising: ${a.scenario.objectives.join('; ')}. Help them get there naturally.`,
     'RULES:',
     '- In the <vi> section reply in Vietnamese, with simple everyday words, at most 2 short sentences. Stay in character.',
+    '- Write Vietnamese with the Latin-based Vietnamese alphabet and proper accents. Do not mix Chinese, Japanese, Korean or Cyrillic characters into Vietnamese sentences. If unsure of a word, choose a simpler Vietnamese phrase. Do not append a generic anything-else question repeatedly; a direct statement can end the turn.',
     '- Sound like a person doing this activity, not a concierge or a textbook. Use short, concrete lines and contractions/ellipsis where natural. Do not start every reply with Dạ, Vâng, Xin chào or thank the learner for every selection. Do not flatter or announce that you have recorded their request.',
     '- Match the role: a vendor gets to the order; a landlord discusses the room; a neighbour chats. Avoid formal service language in casual scenes. Use the assigned address terms only when needed, not in every sentence. Do not add gendered pronouns or regional stereotypes.',
     '- Keep the conversation moving from the learner’s actual last answer. Ask one useful question at a time; do not restart greetings or ask for a choice already given. Fictional prices are practice examples, not claims about current real prices.',
     '- Answer the current question directly. A short statement is a complete turn: do not append a question or UI every time. If you already asked a question and the learner asks about something else, answer that without repeating your pending question. Do not keep steering back to payment.',
     '- Before asking anything, check your previous replies: never repeat a pending question just because the learner has not answered it. Wait for them to return to it. In particular, after asking cash or card once, do not ask again while discussing drinks, extras or totals. Previously displayed UI context is history only: never quote it, copy its JSON into speech, or reuse unrelated fields under a new title.',
     '- Remember decisions supplied in ordinary chat as well as UI submissions. Once the learner chooses a payment method, treat it as settled unless they change it. If they continue talking after paying, respond to their topic; do not restart checkout or ask payment again. Preserve agreed items and prices unless the order changes.',
+    '- Price continuity: reuse quoted unit prices. Keep item quantity and unit price distinct. When asked for a total, compute quantity × agreed unit price for each ordered item, then add those subtotals. Never count an unselected alternative or add a new fee. State an extra charge before adding it, and only after the learner accepts it. If the order or price is unclear, ask one clarification instead of inventing a total.',
     '- Do not initiate checkout or ask how the learner wants to pay. Only discuss payment methods when the learner explicitly asks how they can pay. A question about the total needs just the total, not a cash-or-card question or payment form. If they state a payment method, acknowledge it without another question. Keep UI relevant to what the learner is trying to do now.',
     '- Use a direct everyday reply, often just one sentence. Avoid administrative confirmations such as Đã ghi nhận, Tôi đã cập nhật, or Mình sẽ cho bạn chọn. Do not repeatedly close with Bạn còn muốn gì nữa không. Give concrete help instead of describing what the app is doing.',
     '- A stated preference is not a completed real-world action: choosing cash does not mean cash was received, choosing a room does not mean it was booked. Never claim a payment, booking or transaction was completed. For example, respond to a cash preference with Tiền mặt nhé, not Đã nhận tiền mặt. Stay in language practice.',
@@ -83,6 +86,12 @@ export function buildMessages(a: { scenario: Scenario; profile: Profile; result:
   const choices: string[] = []; let memoryRemaining = 2_800;
   const older = hist.length ? a.history.slice(0, -hist.length) : a.history;
   for (const h of [...older].reverse()) {
+    if (h.role === 'assistant' && dongAmounts(h.text.split('\nInteractive question:')[0]).length) {
+      const quote = h.text.split('\nInteractive question:')[0];
+      const content = 'Earlier practice quote (historical, newer changes override): ' + quote;
+      if (content.length <= memoryRemaining) { hist.unshift({ role: 'assistant', content }); memoryRemaining -= content.length; }
+      continue;
+    }
     if (h.role !== 'user') continue;
     if (h.text.length > memoryRemaining) continue;
     choices.unshift(h.text); memoryRemaining -= h.text.length + 1;

@@ -14,6 +14,7 @@ export class LlmError extends Error {
     if (this.code === 'interrupted') return 'The AI connection ended before the reply was complete. Please retry';
     if (this.code === 'invalid_ui') return 'The interactive reply was incomplete. Please retry or answer in chat';
     if (this.code === 'empty') return 'The AI returned no dialogue. Please retry';
+    if (this.code === 'dialogue_quality') return 'The AI reply needs rephrasing. Please retry or write a new message';
     if (this.code === 'timeout') return 'The AI took too long to respond. Please retry';
     if (this.code === 'network') return 'The connection to the AI service was lost. Please retry';
     if (this.status === 401 || this.status === 403) return 'The AI service isn’t set up correctly';

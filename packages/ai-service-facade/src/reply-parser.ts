@@ -15,6 +15,7 @@ function holdBack(s: string, closing: string): number {
  * Model nhỏ hay lệch định dạng: nếu không có thẻ nào, toàn bộ văn bản được coi là câu trả lời tiếng Việt; chữ nằm ngoài thẻ bị bỏ.
  */
 export class ReplyParser {
+  viCompleted = 0;
   uiStarted = 0;
   uiCompleted = 0;
   private buf = ''; private section: Section | null = null; private sawTag = false; private fresh = false;
@@ -43,7 +44,7 @@ export class ReplyParser {
       }
       const closing = `</${this.section}>`;
       const i = this.buf.indexOf(closing);
-      if (i >= 0) { this.emit(out, this.section, this.buf.slice(0, i)); if (this.section === 'ui') this.uiCompleted++; this.buf = this.buf.slice(i + closing.length); this.section = null; continue; }
+      if (i >= 0) { this.emit(out, this.section, this.buf.slice(0, i)); if (this.section === 'ui') this.uiCompleted++; if (this.section === 'vi') this.viCompleted++; this.buf = this.buf.slice(i + closing.length); this.section = null; continue; }
       const keep = holdBack(this.buf, closing);
       this.emit(out, this.section, this.buf.slice(0, this.buf.length - keep)); this.buf = this.buf.slice(this.buf.length - keep);
       return out;

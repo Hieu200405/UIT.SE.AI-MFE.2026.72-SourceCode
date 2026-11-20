@@ -1,5 +1,8 @@
 # 002 – AI Service Facade & Contract v0.2 – spec
 
+## T219
+Phần vi được giữ tới khi đóng thẻ hoặc EOF để kiểm tra hệ chữ và câu kết generic lặp. Chỉ phần đã qua kiểm tra được hiển thị. Chất lượng không đạt trước khi hiển thị được regenerate một lần, chia sẻ hai attempts với empty/network; không tự thay lời bằng template. Giữ UI do model quyết định. Đây là kiểm tra hẹp, không chứng minh mọi câu tự nhiên/đúng nội dung.
+
 ## T217
 T218: model có thể chọn presentation comparison và facts theo schema chung; không ép so sánh mỗi lượt. Prompt lời thoại ngắn theo vai, phân biệt ý định và hành động hoàn tất; UI và speech không tự xác nhận giao dịch thật.
 Khi provider trả 429, Facade tôn trọng Retry-After và chia sẻ cooldown qua limiter của process. Trong thời gian chờ mọi lượt LLM (kể cả repair/recovery) bị chặn trước khi gọi provider. Người dùng nhận số giây chờ còn lại. Không tự gửi lại, không cộng lượt/commit UI lỗi. Cooldown in-memory không đảm bảo đồng bộ nhiều replica hoặc qua restart.
@@ -83,3 +86,6 @@ Nghiệm thu thật phải xác nhận health mode llm, không fallback mock; br
 
 ## T213
 WHAT: phân biệt lỗi dịch vụ/quota/token cắt/UI hỏng; lượt lỗi không commit form/history; giữ UI tùy chọn theo hội thoại. Lời nhân vật đời thường, không lịch sự rập khuôn; xưng hô giữ rule-first. Lịch sử đưa vào model có giới hạn dung lượng.
+
+## T220
+Báo giá đã nói phải còn trong ngữ cảnh dù vượt sáu tin gần nhất. Câu hỏi chỉ về tổng không được tự đổi báo giá duy nhất ngay trước đó. Nhãn/mô tả/tiêu chí UI dành cho người học dùng tiếng Anh; tên lựa chọn/tên món giữ nguyên. Không thay đổi registry hoặc ép trình tự biểu mẫu.

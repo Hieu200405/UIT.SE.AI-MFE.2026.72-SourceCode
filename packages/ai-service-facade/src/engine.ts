@@ -8,6 +8,8 @@ import type { HistoryItem } from './prompt.ts';
 import { ReplyParser } from './reply-parser.ts';
 import { pickCulturalNote } from './scripts.ts';
 import { MAX_UI_CHARS, parseGeneratedForm } from './interactive.ts';
+import { dialogueIssue } from './dialogue-quality.ts';
+import { changedQuote, uiNeedsEnglish } from './response-quality.ts';
 
 export interface EngineOptions {
   llm?: LlmConfig; limiter?: RateLimiter; budget?: DailyBudget;
@@ -60,24 +62,32 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
         else yield step({ type: 'text_delta', requestId: rid, partId: 'p1', text: '', translation: p.text });
       }
     };
-    let recovery: 'empty' | 'network' = 'empty';
+    let recovery: 'empty' | 'network' | 'quality' = 'empty';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const attemptMessages = attempt && recovery === 'empty' ? [...messages, { role: 'user' as const, content: 'The previous generation contained no spoken reply. Answer the last learner message or submitted choices now. Begin with <vi>one short Vietnamese in-character reply</vi><en>its English translation</en>. Only then optionally append a valid <ui> block. Do not output UI alone.' }] : messages;
+      const attemptMessages = attempt && recovery !== 'network' ? [...messages, { role: 'user' as const, content: recovery === 'quality'
+        ? 'Rewrite the reply to my last message. Your previous attempt failed dialogue quality: use only the Latin-based Vietnamese alphabet, do not mix other writing systems, and do not repeat a generic anything-else question from recent replies. Answer directly in one or two short sentences, preserving agreed facts and address terms. Do not change the previously quoted price when the learner only asks for the total. If several items were ordered, compute quantity times each agreed unit price and sum; never invent a surcharge. Return <vi>Vietnamese reply</vi><en>English translation</en> and optional valid <ui>JSON</ui>; do not discuss the correction.'
+        : 'The previous generation contained no spoken reply. Answer the last learner message or submitted choices now. Begin with <vi>one short Vietnamese in-character reply</vi><en>its English translation</en>. Only then optionally append a valid <ui> block. Do not output UI alone.' }] : messages;
       if (attempt) {
         acquire();
         if (!(opts.budget?.tryReserve(attemptMessages.reduce((sum, m) => sum + m.content.length, 0) + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
         parser = new ReplyParser(); userEn = ''; vi = ''; ui = ''; uiTooLarge = false;
       }
-      let pending: PlanStep[] = [];
-      const emit = function* (pieces: ReturnType<ReplyParser['push']>): Generator<PlanStep> {
-        for (const event of handle(pieces)) {
-          if (vi.trim()) { yield* pending; pending = []; yield event; }
-          else pending.push(event);
+      let pending: PlanStep[] = []; let released = false;
+      const emit = function* (pieces: ReturnType<ReplyParser['push']>, complete = false): Generator<PlanStep> {
+        for (const event of handle(pieces)) pending.push(event);
+        if (vi.length > 4000) throw new LlmError('dialogue_quality', true);
+        if (vi.trim() && (released || parser.viCompleted > 0 || complete)) {
+          if (dialogueIssue(vi, ctx.history, msg) || changedQuote(vi, ctx.history, msg)) throw new LlmError('dialogue_quality', true);
+          released = true; yield* pending; pending = [];
         }
       };
       try {
         for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, attemptMessages, signal, opts.fetchImpl)) yield* emit(parser.push(delta));
+        yield* emit(parser.end(), true);
       } catch (err) {
+        if (attempt === 0 && !released && !signal?.aborted && err instanceof LlmError && err.code === 'dialogue_quality') {
+          recovery = 'quality'; console.info('[facade] LLM recovery: dialogue_quality'); continue;
+        }
         if (attempt === 0 && !vi.trim() && !signal?.aborted && err instanceof LlmError && err.code === 'network') {
           recovery = 'network';
           console.info('[facade] LLM recovery: network_before_dialogue');
@@ -90,9 +100,9 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
           if (signal?.aborted) return;
           continue;
         }
+        if (!signal?.aborted && !released && vi.trim() && !dialogueIssue(vi, ctx.history, msg) && !changedQuote(vi, ctx.history, msg)) yield* emit([], true);
         throw err;
       }
-      yield* emit(parser.end());
       if (signal?.aborted) return;
       if (vi.trim()) { yield* flushUserEn(); break; }
     }
@@ -103,12 +113,13 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
     if (interactive && parser.uiStarted > 0) {
       const complete = !uiTooLarge && parser.uiStarted === 1 && parser.uiCompleted === 1;
       let form = complete ? parseGeneratedForm(ui) : null;
+      if (form && uiNeedsEnglish(form, ctx.history)) form = null;
       let intentionalNull = complete && ui.trim() === 'null';
       if (!form && !intentionalNull && !uiTooLarge) {
         // One bounded schema repair through the same provider, subject to the same budgets.
         const repairMessages = [...messages,
           { role: 'assistant' as const, content: `<vi>${vi}</vi><ui>${ui}</ui>` },
-          { role: 'user' as const, content: 'Your UI failed schema validation. Return ONLY a corrected JSON object matching the UI schema above, no tags or markdown. Keep the same question and choices. Use English labels. Use 1-5 fields, choice/select options must be strings. Omit optional metadata if uncertain. If no input is useful, return null. Do not repeat dialogue.' }];
+          { role: 'user' as const, content: 'Your UI failed schema or English-language validation. Return ONLY a corrected JSON object matching the UI schema above, no tags or markdown. Keep the same question and choices. Translate ALL titles, descriptions, labels, badges and fact label/value text into English. Preserve Vietnamese option names and exact option strings. For example, Noodles mềm becomes Soft noodles and Ăn trong bát becomes Served in a bowl. Preserve agreed prices and choices. Use 1-5 fields, choice/select options must be strings. Omit optional metadata if uncertain. If no input is useful, return null. Do not repeat dialogue.' }];
         const repairChars = repairMessages.reduce((n, m) => n + m.content.length, 0);
         acquire();
         if (!(opts.budget?.tryReserve(repairChars + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
@@ -118,7 +129,9 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
           if (repaired.length > MAX_UI_CHARS) throw new LlmError('invalid_ui', true);
         }
         if (signal?.aborted) return;
-        form = parseGeneratedForm(repaired); intentionalNull = repaired.trim() === 'null';
+        form = parseGeneratedForm(repaired);
+        if (form && uiNeedsEnglish(form, ctx.history)) form = null;
+        intentionalNull = repaired.trim() === 'null';
       }
       if (form) yield step({ type: 'ui_card', requestId: rid, card: { type: 'scenario_form', data: form } });
       else if (!intentionalNull) {

@@ -1,5 +1,10 @@
 # Facade — Tasks nghiệm thu
 
+## T219 — Kiểm tra chất lượng lời thoại trước khi hiển thị (2026-11-19)
+- Files: specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/ai-service-facade/src/{dialogue-quality,engine,prompt,reply-parser,llm}.ts; packages/ai-service-facade/test/llm.test.ts; scripts/verify-live-ui.cjs; docs/acceptance/dialogue-quality.md.
+- AC: chữ ngoài Latin trong vi không bị stream ra; câu kết generic lặp gần đây được yêu cầu viết lại, không chặn câu hỏi nghiệp vụ hoặc yêu cầu nhắc lại; tối đa một recovery chung với empty/network, cùng limiter/budget; không commit lượt/UI lỗi; Stop/partial failure giữ hành vi có kiểm chứng; test hồi quy, build/lint/typecheck/E2E và Groq web thật. Không dependency/secret/quy tắc văn hóa mới.
+- Kết quả: 184/184 test, LLM cuối58/58, E2E28/28, build/lint/typecheck pass. Groq thật comparison→submit→4 followups pass kiểm tra hệ chữ/generic closer, không Retry; còn lỗi tổng tiền/ngôn ngữ facts ngoài gate. Bằng chứng/giới hạn: docs/acceptance/dialogue-quality.md. Chưa commit/push/PR.
+
 T218: UI so sánh và lời thoại tự nhiên, Files/AC tại ../003-chat-remote/tasks.md; triển khai trên codex/t218-rich-agent-ui, giữ các thay đổi T216/T217 chưa commit.
 
 ## T217 — Tôn trọng thời gian chờ của provider (2026-11-18)
@@ -45,3 +50,9 @@ T211 kiểm chứng Groq 2026-11-16 theo yêu cầu user: Node nạp .env tại 
 T213: phạm vi Files/AC/Analyze tại ../003-chat-remote/tasks.md. Facade/prompt/schema và test thực hiện trên codex/t213-agent-quality.
 
 T213: parser preamble, bounded UI repair, heartbeat và lỗi phân biệt đã kiểm chứng hồi quy. Groq dài còn mở (empty/http_429); xem docs/acceptance/agent-quality.md. Không tuyên bố provider ổn định tuyệt đối.
+
+## T220 — Nhất quán báo giá và tiếng Anh trong UI (2026-11-19)
+- Files: specs/002-ai-service-facade/{spec,plan,tasks}.md; packages/ai-service-facade/src/{response-quality,engine,prompt}.ts; packages/ai-service-facade/test/llm.test.ts; scripts/verify-live-ui.cjs; docs/acceptance/quote-ui-quality.md.
+- AC: giữ báo giá cũ trong memory bounded; khi chỉ hỏi lại tổng sau một báo giá duy nhất, không xuất số tiền mới vô cớ; UI explanatory fields có tiếng Việt có dấu bị repair trước render, giữ tên món/options; một repair qua limiter/budget, thất bại không commit. Test hồi quy và Groq thật trên web; ghi rõ giới hạn heuristic, không coi đây là ledger giao dịch thật. Không dependency/secret mới.
+
+- T220 kết quả chốt 2026-11-20: npm test 192/192; LLM sau tinh chỉnh cuối 66/66; E2E chạy lại đầy đủ 28/28; build/lint/typecheck pass. Groq thật trên web sinh UI, nhận lựa chọn và 6 followups; tổng 55.000đ rồi 100.000đ đúng, mô tả UI kiểm tra bằng DOM là tiếng Anh. Giới hạn bộ kiểm tra và lỗi hỏi thanh toán còn sót ghi tại docs/acceptance/quote-ui-quality.md. Hoàn tất phạm vi AC T220; chưa commit/push/PR.
