@@ -89,3 +89,9 @@ WHAT: phân biệt lỗi dịch vụ/quota/token cắt/UI hỏng; lượt lỗi 
 
 ## T220
 Báo giá đã nói phải còn trong ngữ cảnh dù vượt sáu tin gần nhất. Câu hỏi chỉ về tổng không được tự đổi báo giá duy nhất ngay trước đó. Nhãn/mô tả/tiêu chí UI dành cho người học dùng tiếng Anh; tên lựa chọn/tên món giữ nguyên. Không thay đổi registry hoặc ép trình tự biểu mẫu.
+
+## T221
+Agent trả lời nhu cầu hiện tại, không mặc định kết thúc mỗi lượt bằng câu hỏi. Thanh toán chỉ thành câu hỏi/UI chọn phương thức khi người học chủ động hỏi phương thức. Hỏi tổng hoặc thông báo trả tiền mặt không phải yêu cầu chọn phương thức. Câu hỏi đã hỏi gần đây hoặc thông tin người học đã trả lời rõ không được hỏi lại trừ yêu cầu nhắc lại/đổi lựa chọn. Giữ lựa chọn UI tự sinh trong registry.
+
+## T222
+Lời kết phải phù hợp vai và việc vừa trao đổi; không quảng cáo dịch vụ, cảm ơn sự tin tưởng/lựa chọn hay tự nhận vinh hạnh phục vụ. Chào kết ngắn như hẹn gặp lại/cảm ơn vẫn hợp lệ. Khi người học kết thúc rõ ràng, không mở câu hỏi hay biểu mẫu mới; không bịa hẹn gặp, giao dịch hoặc cam kết. Kiểm chứng nhiều tình huống thay vì chỉ gọi món.

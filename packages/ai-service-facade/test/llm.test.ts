@@ -324,7 +324,7 @@ test('LLM decides UI/no UI; selections and original question return to model; ne
   assert.ok(fake.requests[0].body.messages[0].content.includes('Do not follow a fixed form sequence'));
   assert.equal(fake.requests[0].body.max_tokens, 2400);
   fake.reply = uiReply({ title: 'Choose spice level', description: 'How spicy would you like your phở?', submitLabel: 'Use this preference',
-    fields: [{ id: 'spice', label: 'Spice level', kind: 'select', required: true, options: ['Not spicy', 'A little spicy'] }] });
+    fields: [{ id: 'spice', label: 'Spice level', kind: 'select', required: true, options: ['Not spicy', 'A little spicy'] }] }).replace('Bạn muốn chọn món nào?', 'Bạn muốn ăn cay không?');
   const second = await run(client, { ...msg('Phở'), interactive: true, interaction: { formId: form.formId, values: { dish: 'Phở' } } });
   const next = formFrom(second.events);
   assert.equal(next.title, 'Choose spice level'); assert.notEqual(next.formId, form.formId);
@@ -419,7 +419,8 @@ test('long conversation retains valid UI and the latest answer with bounded cont
   reset(); fake.chunkSize = 2048; const { client } = await start();
   let form;
   for (let i = 0; i < 14; i++) {
-    fake.reply = uiReply({ ...generated(`Decision ${i}`), summary: [{ label: 'Practice turn', value: String(i) }] });
+    const decision = generated(`Decision ${i}`); decision.fields[0].label = `Decision ${i}`;
+    fake.reply = uiReply({ ...decision, summary: [{ label: 'Practice turn', value: String(i) }] }).replace('Bạn muốn chọn món nào?', 'Mình tiếp tục nhé.');
     const r = await run(client, { ...msg(`Practice ${i}`), interactive: true, ...(form ? { interaction: { formId: form.formId, values: { dish: 'Phở' } } } : {}) });
     assert.equal(r.outcome, 'done'); form = formFrom(r.events);
     assert.equal(form.title, `Decision ${i}`);
@@ -643,7 +644,7 @@ test('T219: quality gate preserves Vietnamese accents/emoji and only targets gen
   assert.equal(dialogueIssue('Bạn muốn gì thêm không?',history,'Khăn giấy'),'repeated_closer');
   assert.equal(dialogueIssue('Bạn muốn gì thêm không?',history,'Nhắc lại câu hỏi nhé'),null);
   assert.equal(dialogueIssue('Bạn muốn gì thêm không?',history,"Don't repeat that question"),'repeated_closer');
-  assert.equal(dialogueIssue('Bạn muốn ăn cay không?',[{role:'assistant',text:'Bạn muốn ăn cay không?'}],''),null);
+  assert.equal(dialogueIssue('Bạn muốn ăn cay không?',[{role:'assistant',text:'Bạn muốn ăn cay không?'}],''),'repeated_question');
 });
 
 test('T219: mixed script split across chunks is repaired before any dialogue/translation/UI leaks', async () => {
@@ -775,4 +776,109 @@ test('T220: a single extra price or unit price for multiple servings is not a to
   const quotes=[{role:'assistant' as const,text:'Phở 45.000 đồng, trà 10.000 đồng.'},{role:'assistant' as const,text:'Tổng 55.000 đồng.'}];
   assert.equal(changedQuote('45.000 đồng + 10.000 đồng = 55.000 đồng.',quotes,'Tổng bao nhiêu vậy?'),false);
   assert.ok(changedQuote('Tổng 45.000 đồng.',quotes,'Tổng bao nhiêu vậy?'));
+});
+
+test('T221: payment is learner-led; tea and price questions are not payment choices', async () => {
+  const {asksPaymentMethod,paymentQuestion}=await import('../src/dialogue-quality.ts');
+  assert.equal(dialogueIssue('Bạn muốn trả tiền mặt hay thẻ?',[],'Tổng bao nhiêu vậy?'),'unsolicited_payment');
+  assert.equal(dialogueIssue('Bạn muốn thanh toán thế nào?',[],'Mình trả tiền mặt nhé.'),'unsolicited_payment');
+  assert.equal(dialogueIssue('Bạn muốn trả tiền mặt hay thẻ?',[],'Mình có thể thanh toán bằng cách nào?'),null);
+  assert.ok(asksPaymentMethod('Can I pay by card?')); assert.equal(asksPaymentMethod('Đừng hỏi thanh toán nữa'),false);
+  assert.equal(paymentQuestion('Bạn muốn uống trà đá không?'),false);
+  assert.equal(dialogueIssue('Tiền mặt nhé.',[],'Mình trả tiền mặt nhé.'),null);
+});
+
+test('T221: repeated/answered questions trigger recovery but repeat and change remain possible', () => {
+  const h=[{role:'assistant' as const,text:'Bạn muốn ăn cay không?'}];
+  assert.equal(dialogueIssue('Bạn muốn ăn cay không?',h,'Thêm rau nhé'),'repeated_question');
+  assert.equal(dialogueIssue('Bạn muốn ăn cay không?',h,'Nhắc lại nhé'),null);
+  assert.equal(dialogueIssue('Bạn muốn ăn cay không?',h,'Đổi món khác nhé'),null);
+  assert.equal(dialogueIssue('Bạn muốn bao nhiêu phần?',[],'Một phần phở nhé'),'answered_question');
+  assert.equal(dialogueIssue('Bạn muốn ăn cay không?',[],'Không cay nhé'),'answered_question');
+  assert.equal(dialogueIssue('Ăn ở đây hay mang về?',[],'Ăn ở đây nhé'),'answered_question');
+  assert.equal(dialogueIssue('Mình ghi nhận. Bạn cần gì?',[],'Tiền mặt nhé'),'administrative_tone');
+  assert.equal(dialogueIssue('Bạn muốn bao nhiêu phần?',[],JSON.stringify({type:'ui_response',question:'One serving?',answers:[{value:'Not sure'}]})),null);
+});
+
+test('T221: unsolicited payment is rewritten before leaking speech or translation', async () => {
+  let calls=0;
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===1 ? '<vi>Tổng 55.000 đồng. Bạn trả tiền mặt hay thẻ?</vi><en>Cash or card?</en>' : '<vi>Tổng 55.000 đồng.</vi><en>The total is 55,000 VND.</en>';
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  const r=await run(client,{...msg('Tổng bao nhiêu vậy?'),interactive:true});
+  assert.equal(r.outcome,'done'); assert.equal(calls,2); assert.ok(!JSON.stringify(r.events).includes('hay thẻ'));
+  assert.equal((await client.getProgress()).totals.turns,1);
+});
+
+test('T221: payment UI is repaired away unless learner asks about payment methods', async () => {
+  let calls=0; const form={title:'Choose payment',description:'How would you like to pay?',submitLabel:'Choose',fields:[{id:'method',label:'Payment method',kind:'choice',required:true,options:['Cash','Card']}]};
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===1 ? '<vi>Tổng 55.000 đồng.</vi><ui>'+JSON.stringify(form)+'</ui>' : 'null';
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  const r=await run(client,{...msg('Tổng bao nhiêu vậy?'),interactive:true});
+  assert.equal(r.outcome,'done'); assert.equal(calls,2); assert.ok(!r.events.some(e=>e.type==='ui_card' && e.card.type==='scenario_form'));
+  const {uiConversationIssue}=await import('../src/dialogue-quality.ts');
+  assert.equal(uiConversationIssue({...form,formId:'test'} as any,[],'How can I pay?'),null);
+});
+
+test('T221: repeated invalid payment reply does not commit and remains bounded', async () => {
+  let calls=0; const {client}=await start({engine:{fetchImpl:async()=>{calls++;return new Response('data: {"choices":[{"delta":{"content":"<vi>Bạn trả tiền mặt hay thẻ?</vi>"}}]}\n\ndata: [DONE]\n\n');}}});
+  const r=await run(client,{...msg('Thêm rau nhé'),interactive:true});
+  assert.equal(r.outcome,'error'); assert.equal(calls,2); assert.equal(viText(r.events),''); assert.equal((await client.getProgress()).totals.turns,0);
+});
+
+test('T221: UI repetition respects changed alternatives and explicit reopening; submitted values count as answers', async () => {
+  const {uiConversationIssue,asksPaymentMethod}=await import('../src/dialogue-quality.ts');
+  const form={...generated(),formId:'example'};
+  const history=[{role:'assistant' as const,text:'Chọn nhé.\nInteractive question: '+JSON.stringify(form)}];
+  assert.equal(uiConversationIssue(form,history,'Thêm rau nhé'),'repeated_question');
+  assert.equal(uiConversationIssue(form,history,'Đổi món nhé'),null);
+  const different=structuredClone(form);different.fields[0].options=['Rice','Noodles'];
+  assert.equal(uiConversationIssue(different,history,'What else is available?'),null);
+  const spice={...form,fields:[{id:'spice',label:'Spice level',kind:'choice' as const,required:true,options:['Not spicy','Spicy']}]};
+  assert.equal(uiConversationIssue(spice,[],JSON.stringify({type:'ui_response',question:'Spice?',answers:[{value:'Not spicy'}]})),'answered_question');
+  assert.equal(asksPaymentMethod('Có thêm rau không?'),false);
+});
+
+test('T221: explicitly requested payment form still reaches the learner', async () => {
+  const form={title:'Choose payment',description:'Choose a practice payment method.',submitLabel:'Choose',fields:[{id:'method',label:'Payment method',kind:'choice',required:true,options:['Cash','Card']}]};
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content='<vi>Bạn muốn trả tiền mặt hay thẻ?</vi><ui>'+JSON.stringify(form)+'</ui>';
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  const r=await run(client,{...msg('How can I pay?'),interactive:true});
+  assert.equal(r.outcome,'done'); assert.equal(formFrom(r.events).title,'Choose payment');
+});
+
+test('T222: corporate closings are rewritten while ordinary goodbyes remain valid', () => {
+  for(const text of ['Rất vui được phục vụ, hẹn gặp lại nhé!','Cảm ơn bạn đã tin tưởng lựa chọn chúng tôi.','Mình luôn sẵn sàng hỗ trợ bạn.']) assert.equal(dialogueIssue(text,[],'Cảm ơn, tạm biệt.'),'formulaic_closing');
+  for(const text of ['Hẹn gặp lại nhé!','Chào cháu nhé.','Cảm ơn bạn!','Mai cháu cứ đến xem nhé.']) assert.equal(dialogueIssue(text,[],'Tạm biệt.'),null);
+  assert.equal(dialogueIssue('Rất vui được phục vụ.',[],'Nhắc lại câu đó nhé'),null);
+  assert.equal(dialogueIssue('Bạn còn cần gì nữa không?',[],'Cảm ơn, mình về trước nhé.'),'closing_reopens');
+  assert.equal(dialogueIssue('Bạn muốn xem lúc mấy giờ?',[],'Cảm ơn, chiều mai xem phòng được không?'),null);
+});
+
+test('T222: goodbye prevents new UI, but a thank-you with another request does not', async () => {
+  const {uiConversationIssue}=await import('../src/dialogue-quality.ts');
+  const form={...generated(),formId:'test'};
+  assert.equal(uiConversationIssue(form,[],'Cảm ơn, lần sau mình quay lại.'),'closing_reopens');
+  assert.equal(uiConversationIssue(form,[],'Cảm ơn, giúp mình chọn món nhé.'),null);
+});
+
+test('T222: formulaic closing is regenerated before display without replacing it with a canned reply', async () => {
+  let calls=0;
+  const {client}=await start({engine:{fetchImpl:async()=>{
+    const content=++calls===1 ? '<vi>Rất vui được phục vụ, hẹn gặp lại!</vi><en>Glad to serve you.</en>' : '<vi>Hẹn gặp lại nhé!</vi><en>See you!</en>';
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`);
+  }}});
+  const r=await run(client,{...msg('Cảm ơn, tạm biệt.'),interactive:true});
+  assert.equal(r.outcome,'done'); assert.equal(calls,2); assert.equal(viText(r.events),'Hẹn gặp lại nhé!');assert.ok(!JSON.stringify(r.events).includes('Glad to serve'));
+});
+
+test('T222: a goodbye keeps its greeting verb; bare address acknowledgements are allowed mid-conversation', () => {
+  assert.equal(dialogueIssue('Cháu nhé, hẹn gặp chiều mai.',[],'Cháu cảm ơn bác. Tạm biệt.'),'incomplete_closing');
+  assert.equal(dialogueIssue('Chào cháu nhé, hẹn gặp chiều mai.',[],'Cháu cảm ơn bác. Tạm biệt.'),null);
+  assert.equal(dialogueIssue('Cháu nhé.',[],'Ai sẽ đến xem phòng?'),null);
 });

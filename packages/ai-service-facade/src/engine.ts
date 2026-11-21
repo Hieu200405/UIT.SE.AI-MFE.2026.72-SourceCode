@@ -8,7 +8,7 @@ import type { HistoryItem } from './prompt.ts';
 import { ReplyParser } from './reply-parser.ts';
 import { pickCulturalNote } from './scripts.ts';
 import { MAX_UI_CHARS, parseGeneratedForm } from './interactive.ts';
-import { dialogueIssue } from './dialogue-quality.ts';
+import { dialogueIssue, uiConversationIssue } from './dialogue-quality.ts';
 import { changedQuote, uiNeedsEnglish } from './response-quality.ts';
 
 export interface EngineOptions {
@@ -62,10 +62,11 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
         else yield step({ type: 'text_delta', requestId: rid, partId: 'p1', text: '', translation: p.text });
       }
     };
+    let qualityReason = '';
     let recovery: 'empty' | 'network' | 'quality' = 'empty';
     for (let attempt = 0; attempt < 2; attempt++) {
       const attemptMessages = attempt && recovery !== 'network' ? [...messages, { role: 'user' as const, content: recovery === 'quality'
-        ? 'Rewrite the reply to my last message. Your previous attempt failed dialogue quality: use only the Latin-based Vietnamese alphabet, do not mix other writing systems, and do not repeat a generic anything-else question from recent replies. Answer directly in one or two short sentences, preserving agreed facts and address terms. Do not change the previously quoted price when the learner only asks for the total. If several items were ordered, compute quantity times each agreed unit price and sum; never invent a surcharge. Return <vi>Vietnamese reply</vi><en>English translation</en> and optional valid <ui>JSON</ui>; do not discuss the correction.'
+        ? `Previous issue: ${qualityReason}. Do not ask a payment question or generate payment UI unless I explicitly asked how I can pay. Do not re-ask a recent question or a detail I just supplied. Avoid administrative confirmations such as ghi nhận and corporate closings such as Rất vui được phục vụ, hân hạnh, cảm ơn sự tin tưởng. If I am saying goodbye, end briefly in character without a question or UI; use a complete farewell phrase, not a bare address term plus nhé (such as Cháu nhé); only refer to a next step actually agreed in the conversation. Prefer answering my last point with a short statement; no closing question is required. ` + 'Rewrite the reply to my last message. Your previous attempt failed dialogue quality: use only the Latin-based Vietnamese alphabet, do not mix other writing systems, and do not repeat a generic anything-else question from recent replies. Answer directly in one or two short sentences, preserving agreed facts and address terms. Do not change the previously quoted price when the learner only asks for the total. If several items were ordered, compute quantity times each agreed unit price and sum; never invent a surcharge. Return <vi>Vietnamese reply</vi><en>English translation</en> and optional valid <ui>JSON</ui>; do not discuss the correction.'
         : 'The previous generation contained no spoken reply. Answer the last learner message or submitted choices now. Begin with <vi>one short Vietnamese in-character reply</vi><en>its English translation</en>. Only then optionally append a valid <ui> block. Do not output UI alone.' }] : messages;
       if (attempt) {
         acquire();
@@ -77,7 +78,8 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
         for (const event of handle(pieces)) pending.push(event);
         if (vi.length > 4000) throw new LlmError('dialogue_quality', true);
         if (vi.trim() && (released || parser.viCompleted > 0 || complete)) {
-          if (dialogueIssue(vi, ctx.history, msg) || changedQuote(vi, ctx.history, msg)) throw new LlmError('dialogue_quality', true);
+          qualityReason = dialogueIssue(vi, ctx.history, msg) ?? (changedQuote(vi, ctx.history, msg) ? 'changed_quote' : '');
+          if (qualityReason) throw new LlmError('dialogue_quality', true);
           released = true; yield* pending; pending = [];
         }
       };
@@ -113,16 +115,19 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
     if (interactive && parser.uiStarted > 0) {
       const complete = !uiTooLarge && parser.uiStarted === 1 && parser.uiCompleted === 1;
       let form = complete ? parseGeneratedForm(ui) : null;
-      if (form && uiNeedsEnglish(form, ctx.history)) form = null;
+      const formIssue = (candidate: NonNullable<ReturnType<typeof parseGeneratedForm>>) => uiNeedsEnglish(candidate, ctx.history) ? 'ui_language' : uiConversationIssue(candidate, ctx.history, msg);
+      const uiIssue = form ? formIssue(form) : 'ui_schema';
+      if (uiIssue) form = null;
       let intentionalNull = complete && ui.trim() === 'null';
       if (!form && !intentionalNull && !uiTooLarge) {
         // One bounded schema repair through the same provider, subject to the same budgets.
         const repairMessages = [...messages,
           { role: 'assistant' as const, content: `<vi>${vi}</vi><ui>${ui}</ui>` },
-          { role: 'user' as const, content: 'Your UI failed schema or English-language validation. Return ONLY a corrected JSON object matching the UI schema above, no tags or markdown. Keep the same question and choices. Translate ALL titles, descriptions, labels, badges and fact label/value text into English. Preserve Vietnamese option names and exact option strings. For example, Noodles mềm becomes Soft noodles and Ăn trong bát becomes Served in a bowl. Preserve agreed prices and choices. Use 1-5 fields, choice/select options must be strings. Omit optional metadata if uncertain. If no input is useful, return null. Do not repeat dialogue.' }];
+          { role: 'user' as const, content: `Detected issue: ${uiIssue}. ` + 'Your UI failed schema, language or conversation validation. Do not ask for payment unless the last learner message explicitly asks how to pay. If the learner clearly says goodbye, return null. Never ask again for a choice just submitted or a question asked recently; if no new input is needed return null. Return ONLY a corrected JSON object matching the UI schema above, no tags or markdown. Keep the question and choices only if they are still needed; otherwise return null. Translate ALL titles, descriptions, labels, badges and fact label/value text into English. Preserve Vietnamese option names and exact option strings. For example, Noodles mềm becomes Soft noodles and Ăn trong bát becomes Served in a bowl. Preserve agreed prices and choices. Use 1-5 fields, choice/select options must be strings. Omit optional metadata if uncertain. If no input is useful, return null. Do not repeat dialogue.' }];
         const repairChars = repairMessages.reduce((n, m) => n + m.content.length, 0);
         acquire();
         if (!(opts.budget?.tryReserve(repairChars + outputLimit * 4) ?? true)) throw new LlmError('daily_budget', false, 429);
+        console.info(`[facade] UI repair: ${uiIssue}`);
         let repaired = '';
         for await (const delta of streamCompletion({ ...opts.llm, maxTokens: outputLimit }, repairMessages, signal, opts.fetchImpl)) {
           repaired += delta;
@@ -130,7 +135,8 @@ export async function* runTurn(req: ChatRequest, ctx: EngineContext, opts: Engin
         }
         if (signal?.aborted) return;
         form = parseGeneratedForm(repaired);
-        if (form && uiNeedsEnglish(form, ctx.history)) form = null;
+        const repairedIssue = form ? formIssue(form) : (repaired.trim() === 'null' ? null : 'ui_schema');
+        if (repairedIssue) { console.info(`[facade] UI rejected: ${repairedIssue}`); form = null; }
         intentionalNull = repaired.trim() === 'null';
       }
       if (form) yield step({ type: 'ui_card', requestId: rid, card: { type: 'scenario_form', data: form } });

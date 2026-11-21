@@ -30,7 +30,7 @@ const knownOptionNames = new Set();
       }
     }).catch(() => {}));
   });
-  const done = async () => {
+  const done = async (learnerMessage = '') => {
     await page.getByTestId('replying').waitFor({ state: 'hidden', timeout: 90000 });
     if (await page.getByTestId('chat-error').count()) {
       const error = await page.getByTestId('chat-error').innerText();
@@ -57,6 +57,13 @@ const knownOptionNames = new Set();
       if (uiNeedsEnglish({title: text, description: '', submitLabel: '', fields: [{id:'check',label:'',kind:'choice',required:false,options:names}]})) throw new Error('Non-English explanation in visible UI: ' + text);
     }
     (report.checks.checkedUIExplanations ??= []).push(...explanatory);
+    if (process.env.LIVE_NATURAL === '1') {
+      const { dialogueIssue, asksPaymentMethod } = await import('../packages/ai-service-facade/src/dialogue-quality.ts');
+      const issue = dialogueIssue(speech, checkedSpeech.map(text => ({role:'assistant',text})), learnerMessage);
+      if (issue) throw new Error('Visible dialogue quality: ' + issue + ': ' + speech);
+      const active = await page.locator('form[data-testid="scenario-form"]').allTextContents();
+      if (!asksPaymentMethod(learnerMessage) && active.some(text => /payment|cash.*card|tiền mặt.*thẻ/is.test(text))) throw new Error('Unsolicited payment UI in DOM.');
+    }
     checkedSpeech.push(speech); report.checks.checkedSpeech = checkedSpeech;
   };
   await page.goto(host + '/chat?facade=' + encodeURIComponent(facade) + '&streamTimeout=45000');
@@ -110,9 +117,9 @@ const knownOptionNames = new Set();
     const followups = Math.min(12, Math.max(0, Number(process.env.LIVE_FOLLOWUP_TURNS || 0)));
     for (let turn = 0; turn < followups; turn++) {
       await page.waitForTimeout(paceMs);
-      const prompts = process.env.LIVE_QUOTE_CHECK === '1' ? ['Một phần món vừa chọn giá 45.000 đồng nhé.', 'Cho thêm một ly trà đá giá 10.000 đồng.', 'Tổng bao nhiêu vậy?', 'Đổi thành hai phần món đó, vẫn một ly trà đá nhé.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.'] : process.env.LIVE_COMPARISON === '1' ? ['Ăn ở đây, cho thêm rau nhé.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.'] : ['Ăn ở đây, cho thêm rau nhé.', 'Có trà đá không?', 'Cho một ly thôi, ít đá.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.', 'Món này có hành không?', 'Lần sau mình muốn thử món khác. Có món nào nữa?', 'Giúp mình chọn hai món để so sánh nhé.', 'Giữ món không cay nhé.'];
+      const prompts = process.env.LIVE_NATURAL === '1' ? ['Một phần món vừa chọn, không cay, ăn ở đây nhé.', 'Cho thêm rau nhé.', 'Có trà đá không?', 'Cho một ly trà đá, ít đá nhé.', 'Tổng bao nhiêu vậy?', 'Cho xin thêm khăn giấy.', 'Món này có hành không?', 'Mình có thể thanh toán bằng cách nào?', 'Mình trả tiền mặt nhé.', 'Cảm ơn, lần sau mình quay lại.'] : process.env.LIVE_QUOTE_CHECK === '1' ? ['Một phần món vừa chọn giá 45.000 đồng nhé.', 'Cho thêm một ly trà đá giá 10.000 đồng.', 'Tổng bao nhiêu vậy?', 'Đổi thành hai phần món đó, vẫn một ly trà đá nhé.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.'] : process.env.LIVE_COMPARISON === '1' ? ['Ăn ở đây, cho thêm rau nhé.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.'] : ['Ăn ở đây, cho thêm rau nhé.', 'Có trà đá không?', 'Cho một ly thôi, ít đá.', 'Tổng bao nhiêu vậy?', 'Mình trả tiền mặt nhé.', 'Cho xin thêm khăn giấy.', 'Món này có hành không?', 'Lần sau mình muốn thử món khác. Có món nào nữa?', 'Giúp mình chọn hai món để so sánh nhé.', 'Giữ món không cay nhé.'];
       await page.getByLabel('Your reply').fill(prompts[turn % prompts.length]);
-      await page.getByTestId('send-button').click(); await done();
+      await page.getByTestId('send-button').click(); await done(prompts[turn % prompts.length]);
       if (process.env.LIVE_QUOTE_CHECK === '1' && (turn === 2 || turn === 4)) {
         const { dongAmounts } = await import('../packages/ai-service-facade/src/response-quality.ts');
         const expected = turn === 2 ? 55000 : 100000;

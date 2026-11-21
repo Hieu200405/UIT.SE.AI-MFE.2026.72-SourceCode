@@ -35,3 +35,9 @@ T213 Groq GPT-OSS: dùng max_completion_tokens, reasoning_effort=low, include_re
 
 ## T220
 response-quality kiểm tra currency VND có đơn vị rõ ràng, chặn số mới trong câu hỏi chỉ về tổng ngay sau một báo giá duy nhất (không suy đoán giỏ hàng từ nhiều giá/đơn vị). Giữ các assistant quote cũ nguyên văn ở role assistant với giới hạn memory hiện tại. UI language gate kiểm tra dấu tiếng Việt ở explanatory fields sau loại tên lựa chọn, repair cùng pipeline schema. Đây là heuristic bounded, không nhận dạng toàn bộ ngôn ngữ hoặc thay thế ledger; Groq live phải được đánh giá cả nội dung ngoài gate.
+
+## T221
+Mở rộng dialogue-quality với kiểm tra payment question, exact normalized repeated questions, và nhóm thông tin quantity/spice/dining đã có trong tin hiện tại hoặc ui_response. UI kiểm tra tương ứng trước render qua một lần repair hiện có. Recovery cung cấp lý do hẹp để model viết lại; không hardcode lời nhân vật, không thêm dependency. Các heuristic không phải semantic evaluator tổng quát. Live harness có chế độ 10 lượt theo chủ đề, kiểm tra cả lời thoại và UI DOM, có bước chủ động hỏi phương thức để không cấm mọi UI payment.
+
+## T222
+dialogue-quality nhận diện hẹp các cụm kết kiểu corporate và lời rời cuộc trò chuyện rõ ở cuối tin, giữ ngoại lệ yêu cầu nhắc lại. Dùng recovery chung hiện có, không cắt chuỗi hoặc thay bằng mẫu cố định. Prompt mô tả cách nói theo vai, vẫn dùng đại từ rule engine. Script browser riêng chạy tuần tự 3 tình huống, lưu câu nói/DOM/ảnh, tương tác UI nếu model sinh, không ép phải có form ở mọi tình huống; không mock/fallback.
